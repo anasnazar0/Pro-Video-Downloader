@@ -12,12 +12,16 @@ app = Flask(__name__)
 if not os.path.exists('downloads'):
     os.makedirs('downloads')
 
+# ==== الحل الحقيقي: إعدادات تتجاهل الأخطاء وتسحب الملف المدمج الجاهز ====
 YDL_BASE_OPTS = {
     'quiet': True,
     'no_warnings': True,
     'nocheckcertificate': True,
-    'cookiefile': 'cookies.txt'
+    'cookiefile': 'cookies.txt',
+    'ignoreerrors': True, 
+    'format': 'b' 
 }
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -33,82 +37,61 @@ def get_info():
     try:
         with yt_dlp.YoutubeDL(YDL_BASE_OPTS) as ydl:
             info = ydl.extract_info(url, download=False)
+            
+            if not info:
+                 return jsonify({'error': 'Could not extract video information.'}), 400
+
             formats = []
             raw_formats = info.get('formats', [])
             
             preview_url = None
-            preview_type = 'video' # النوع الافتراضي يوتيوب/تويتر
+            preview_type = 'video'
             
-            # 🚀 الحل الجذري والنهائي لمشكلة عرض تيك توك
             if 'tiktok.com' in url.lower():
                 video_id = info.get('id')
-                # استخدام مشغل تيك توك الرسمي (لا يوجد فيه حظر 403 أبداً)
                 preview_url = f"https://www.tiktok.com/embed/v2/{video_id}"
                 preview_type = 'iframe'
             else:
-                # لبقية المواقع (يوتيوب وتويتر)
-                raw_preview = None
-                if raw_formats:
-                    h264_formats = [f for f in raw_formats if f.get('vcodec') != 'none' and ('h265' not in f.get('vcodec', '').lower() and 'hevc' not in f.get('vcodec', '').lower())]
-                    if h264_formats:
-                        combined = [f for f in h264_formats if f.get('acodec') != 'none' and f.get('ext') == 'mp4']
-                        if combined:
-                            raw_preview = combined[-1].get('url')
-                        else:
-                            raw_preview = h264_formats[-1].get('url')
-                    else:
-                        raw_preview = info.get('url')
-                else:
-                    raw_preview = info.get('url')
-                
+                raw_preview = info.get('url')
                 preview_url = raw_preview
                 preview_type = 'video'
 
+            # إذا كان الفيديو Shorts أو لا يحتوي صيغ مفصلة، نعرض زراً واحداً للتحميل المباشر
             if not raw_formats:
                 formats.append({
-                    'id': 'best',
+                    'id': 'b',
                     'resolution': 'Best Quality',
                     'ext': 'mp4',
-                    'url': f'/download_video?url={url}&format_id=best'
+                    'url': f'/download_video?url={url}&format_id=b'
                 })
             else:
-                for f in raw_formats:
-                    if f.get('vcodec') == 'none':
-                        continue
-                    
-                    vcodec = f.get('vcodec', '').lower()
-                    if 'h265' in vcodec or 'hevc' in vcodec:
-                        continue
-                        
-                    formats.append(f)
-                
-                formats.sort(key=lambda x: x.get('height') or 0, reverse=True)
-                
-                final_formats = []
+                # ترتيب وعرض الصيغ بطريقة لا تسبب انهيار الكود
                 unique_resolutions = set()
-                
-                for f in formats:
+                for f in raw_formats:
+                    vcodec = f.get('vcodec', 'none')
+                    if vcodec == 'none': continue 
+                    
                     height = f.get('height')
-                    res_str = f"{height}p" if height else (f.get('resolution') or 'Standard')
-                        
-                    if res_str not in unique_resolutions:
-                        unique_resolutions.add(res_str)
-                        final_formats.append({
-                            'id': f.get('format_id'),
-                            'resolution': res_str,
-                            'ext': 'mp4',
-                            'url': f'/download_video?url={url}&format_id={f.get("format_id")}'
-                        })
-                        
-                    if len(final_formats) >= 5:
-                        break
+                    if height:
+                        res_str = f"{height}p"
+                        if res_str not in unique_resolutions:
+                            unique_resolutions.add(res_str)
+                            formats.append({
+                                'id': f.get('format_id'),
+                                'resolution': res_str,
+                                'ext': 'mp4',
+                                'url': f'/download_video?url={url}&format_id={f.get("format_id")}'
+                            })
+                            
+                formats.sort(key=lambda x: int(x['resolution'].replace('p','')) if 'p' in x['resolution'] else 0, reverse=True)
+                formats = formats[:5] 
 
             return jsonify({
                 'title': info.get('title', 'Video'),
                 'thumbnail': info.get('thumbnail'),
                 'preview_url': preview_url, 
-                'preview_type': preview_type, # إرسال نوع المشغل للواجهة
-                'formats': final_formats
+                'preview_type': preview_type,
+                'formats': formats if formats else [{'id': 'b', 'resolution': 'Best Quality', 'ext': 'mp4', 'url': f'/download_video?url={url}&format_id=b'}]
             })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -117,19 +100,17 @@ def get_info():
 @app.route('/download_video')
 def download_video():
     url = request.args.get('url')
-    format_id = request.args.get('format_id', 'best')
+    format_id = request.args.get('format_id', 'b')
     
     file_id = str(uuid.uuid4())
     filepath = os.path.join('downloads', f"{file_id}.%(ext)s")
     
     dl_opts = dict(YDL_BASE_OPTS)
     
-    if 'tiktok.com' in url.lower():
-        dl_opts['format'] = 'bestvideo[vcodec^=avc]+bestaudio/best[vcodec^=avc]/best'
-    elif format_id == 'best':
-        dl_opts['format'] = 'bestvideo[vcodec!*=hevc][vcodec!*=h265]+bestaudio/best[vcodec!*=hevc][vcodec!*=h265]/best'
+    if format_id == 'b':
+        dl_opts['format'] = 'b'
     else:
-        dl_opts['format'] = f'{format_id}+bestaudio/best'
+        dl_opts['format'] = f'{format_id}+bestaudio/b'
         
     dl_opts.update({
         'outtmpl': filepath,
@@ -142,16 +123,10 @@ def download_video():
         
         final_filepath = None
         for file in os.listdir('downloads'):
-            if file.startswith(file_id) and file.endswith('.mp4'):
+            if file.startswith(file_id):
                 final_filepath = os.path.join('downloads', file)
                 break
                 
-        if not final_filepath or not os.path.exists(final_filepath):
-             for file in os.listdir('downloads'):
-                 if file.startswith(file_id):
-                     final_filepath = os.path.join('downloads', file)
-                     break
-                     
         if not final_filepath:
             return "Download failed.", 500
         
@@ -160,7 +135,7 @@ def download_video():
             try:
                 if os.path.exists(final_filepath):
                     os.remove(final_filepath)
-            except Exception as e:
+            except:
                 pass
             return response
 
@@ -169,20 +144,5 @@ def download_video():
     except Exception as e:
         return f"Error: {str(e)}", 500
 
-
 if __name__ == '__main__':
-    try:
-        subprocess.run(['ffmpeg', '-version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print("\n✅ FFmpeg is Ready!")
-    except Exception:
-        print("\n❌ FFmpeg not found! Please check its location.")
-        pass
-        
-
     app.run(debug=True, port=5000)
-
-
-
-
-
-

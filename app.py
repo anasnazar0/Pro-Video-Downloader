@@ -16,8 +16,7 @@ YDL_BASE_OPTS = {
     'quiet': True,
     'no_warnings': True,
     'nocheckcertificate': True,
-    'cookiefile': 'cookies.txt',
-    'format': 'best'
+    'cookiefile': 'cookies.txt'
 }
 @app.route('/')
 def index():
@@ -181,6 +180,7 @@ if __name__ == '__main__':
         
 
     app.run(debug=True, port=5000)
+
 
 
 

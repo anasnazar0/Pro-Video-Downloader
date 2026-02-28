@@ -7,18 +7,30 @@
     <style>
         :root { --primary: #2563eb; --bg: #f8fafc; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; padding: 20px; }
-        .container { max-width: 700px; margin: 50px auto; background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
+        .container { max-width: 800px; margin: 50px auto; background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
         h1 { color: #1e293b; text-align: center; }
         .input-group { display: flex; gap: 10px; margin-bottom: 30px; }
-        input { flex: 1; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; }
-        button { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; }
-        button:disabled { background: #94a3b8; }
-        #result { display: none; border-top: 1px solid #e2e8f0; padding-top: 20px; }
-        .video-card { display: flex; gap: 20px; align-items: flex-start; }
-        .video-card img { width: 200px; border-radius: 8px; }
-        .format-list { margin-top: 15px; }
-        .format-item { display: flex; justify-content: space-between; background: #f1f5f9; padding: 10px; margin-bottom: 5px; border-radius: 6px; }
-        .dl-btn { color: var(--primary); text-decoration: none; font-weight: bold; }
+        input { flex: 1; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; font-size: 16px;}
+        button { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.2s;}
+        button:hover { background: #1d4ed8; }
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
+        #result { display: none; border-top: 1px solid #e2e8f0; padding-top: 25px; }
+        .video-card { display: flex; flex-direction: column; gap: 25px; align-items: center; }
+        
+        /* تصميم شاشة عرض الفيديو */
+        .media-container { width: 100%; max-width: 350px; border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .media-container iframe, .media-container video, .media-container img { width: 100%; height: 250px; border: none; display: block; object-fit: cover; }
+        
+        .info-container { flex: 1; width: 100%; }
+        .format-list { margin-top: 15px; width: 100%; display: flex; flex-direction: column; gap: 10px; }
+        .format-item { display: flex; justify-content: space-between; align-items: center; background: #f8fafc; padding: 12px 15px; border: 1px solid #e2e8f0; border-radius: 8px; }
+        .format-item span { font-weight: 500; color: #334155; }
+        .dl-btn { background: var(--primary); color: white; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 6px; font-size: 14px; transition: 0.2s; }
+        .dl-btn:hover { background: #1d4ed8; }
+
+        @media (min-width: 650px) { 
+            .video-card { flex-direction: row; align-items: flex-start; } 
+        }
     </style>
 </head>
 <body>
@@ -32,10 +44,10 @@
 
     <div id="result">
         <div class="video-card">
-            <img id="thumb" src="" alt="Thumbnail">
-            <div>
-                <h3 id="title" style="margin-top: 0;"></h3>
-                <p id="duration"></p>
+            <div id="media-container" class="media-container"></div>
+            
+            <div class="info-container">
+                <h3 id="title" style="margin-top: 0; color: #0f172a; line-height: 1.4;"></h3>
                 <div id="formats" class="format-list"></div>
             </div>
         </div>
@@ -52,6 +64,7 @@
 
         btn.disabled = true;
         btn.innerText = "Processing...";
+        resultDiv.style.display = "none";
 
         try {
             const response = await fetch('/get_info', {
@@ -64,18 +77,29 @@
 
             if(data.error) throw new Error(data.error);
 
-            // Display Data
-            document.getElementById('thumb').src = data.thumbnail;
+            // 1. عرض العنوان
             document.getElementById('title').innerText = data.title;
-            document.getElementById('duration').innerText = "Duration: " + data.duration;
             
+            // 2. السحر هنا: فحص نوع المشغل وعرضه
+            const mediaContainer = document.getElementById('media-container');
+            mediaContainer.innerHTML = ''; 
+            
+            if (data.preview_type === 'iframe' && data.preview_url) {
+                mediaContainer.innerHTML = `<iframe src="${data.preview_url}" allowfullscreen></iframe>`;
+            } else if (data.preview_type === 'video' && data.preview_url) {
+                mediaContainer.innerHTML = `<video controls src="${data.preview_url}" poster="${data.thumbnail}"></video>`;
+            } else {
+                mediaContainer.innerHTML = `<img src="${data.thumbnail}" alt="Thumbnail">`;
+            }
+            
+            // 3. عرض أزرار الجودات
             const formatsDiv = document.getElementById('formats');
             formatsDiv.innerHTML = "";
             
             data.formats.forEach(f => {
                 formatsDiv.innerHTML += `
                     <div class="format-item">
-                        <span>${f.resolution} (.${f.ext})</span>
+                        <span>${f.resolution}</span>
                         <a href="${f.url}" class="dl-btn" target="_blank">Download</a>
                     </div>
                 `;

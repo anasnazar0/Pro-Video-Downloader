@@ -17,6 +17,8 @@ YDL_BASE_OPTS = {
     'no_warnings': True,
     'nocheckcertificate': True,
     'format_sort': ['vcodec:h264', 'res', 'ext:mp4:m4a'], 
+    # 🚀 السطر السحري الجديد لتخطي حظر يوتيوب
+    'extractor_args': {'youtube': ['player_client=android,ios']},
     'http_headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
@@ -182,4 +184,5 @@ if __name__ == '__main__':
         print("\n❌ FFmpeg not found! Please check its location.")
         pass
         
+
     app.run(debug=True, port=5000)

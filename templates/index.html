@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pro Video Downloader</title>
+    <title>Universal Video Downloader</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
         
@@ -24,7 +24,7 @@
             padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); 
         }
         
-        h1 { color: var(--text-main); text-align: center; margin-bottom: 25px; font-weight: 700; }
+        h1 { color: var(--text-main); text-align: center; margin-bottom: 25px; font-weight: 700; direction: ltr;}
         
         .input-group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 25px; }
         @media (min-width: 480px) { .input-group { flex-direction: row; } } 
@@ -52,18 +52,18 @@
         .video-card { display: flex; flex-direction: column; gap: 20px; align-items: center; }
         @media (min-width: 600px) { .video-card { flex-direction: row; align-items: flex-start; } }
         
-        /* تصميم ذكي لمربع عرض الفيديو/المشغل */
+        /* تصميم مربع العرض ليكون متجاوباً واحترافياً */
         .media-container { 
             width: 100%; max-width: 300px; border-radius: 12px; overflow: hidden; 
             box-shadow: 0 4px 6px rgba(0,0,0,0.1); flex-shrink: 0; background: #000;
-            display: flex; justify-content: center; align-items: center; aspect-ratio: 16/9;
+            display: flex; justify-content: center; align-items: center; aspect-ratio: 16/9; position: relative;
         }
         .media-container iframe, .media-container video, .media-container img { 
             width: 100%; height: 100%; border: none; display: block; object-fit: cover; 
         }
         
-        .info-container { flex: 1; width: 100%; display: flex; flex-direction: column; gap: 15px; }
-        .info-container h3 { margin: 0; color: var(--text-main); font-size: 18px; line-height: 1.5; word-break: break-word; }
+        .info-container { flex: 1; width: 100%; display: flex; flex-direction: column; justify-content: center; gap: 15px; }
+        .info-container h3 { margin: 0; color: var(--text-main); font-size: 18px; line-height: 1.5; word-break: break-word; direction: ltr; text-align: left;}
         
         .format-list { display: flex; flex-direction: column; gap: 10px; width: 100%; }
         
@@ -78,7 +78,7 @@
 <body>
 
 <div class="container">
-    <h1> pro video downlader </h1>
+    <h1>Universal Video Downloader</h1>
     
     <div id="error-msg"></div>
 
@@ -132,18 +132,29 @@
                 throw new Error(data.error || "فشل في جلب معلومات الفيديو.");
             }
 
-            document.getElementById('title').innerText = data.title || 'الفيديو جاهز للتحميل!';
+            document.getElementById('title').innerText = data.title || 'Video Ready!';
             
-            // حقن المشغل الذكي بناءً على نوع المنصة
             const mediaContainer = document.getElementById('media-container');
+            const thumbSrc = data.thumbnail || 'https://img.icons8.com/color/96/000000/video.png';
             mediaContainer.innerHTML = ''; 
             
+            // 🧠 نظام الارتداد الذكي (Smart Fallback)
             if (data.preview_type === 'iframe' && data.preview_url) {
                 mediaContainer.innerHTML = `<iframe src="${data.preview_url}" allowfullscreen></iframe>`;
             } else if (data.preview_type === 'video' && data.preview_url) {
-                mediaContainer.innerHTML = `<video controls src="${data.preview_url}" poster="${data.thumbnail}"></video>`;
+                // وضع مشغل الفيديو + صورة احتياطية مخفية
+                mediaContainer.innerHTML = `
+                    <video id="vid-player" controls preload="metadata" poster="${thumbSrc}">
+                        <source src="${data.preview_url}" type="video/mp4">
+                    </video>
+                    <img id="fallback-img" src="${thumbSrc}" style="display:none;" alt="Thumbnail">
+                `;
+                // إذا رفض المتصفح تشغيل الفيديو، سيتم عرض الصورة المصغرة فوراً
+                document.getElementById('vid-player').onerror = function() {
+                    this.style.display = 'none';
+                    document.getElementById('fallback-img').style.display = 'block';
+                };
             } else {
-                const thumbSrc = data.thumbnail || 'https://img.icons8.com/color/96/000000/video.png';
                 mediaContainer.innerHTML = `<img src="${thumbSrc}" alt="Thumbnail">`;
             }
             
@@ -154,7 +165,7 @@
                 data.formats.forEach(f => {
                     formatsDiv.innerHTML += `
                         <a href="${f.url}" class="dl-btn" target="_blank">
-                            ⬇️ ${f.resolution}
+                            ${f.resolution}
                         </a>
                     `;
                 });
@@ -179,4 +190,3 @@
 </script>
 </body>
 </html>
-

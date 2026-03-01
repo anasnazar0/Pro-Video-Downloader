@@ -1,6 +1,7 @@
 import os
 import uuid
 import requests
+import re
 from flask import Flask, render_template, request, jsonify, send_file, after_this_request
 import yt_dlp
 
@@ -16,8 +17,13 @@ YDL_BASE_OPTS = {
     'quiet': True,
     'no_warnings': True,
     'nocheckcertificate': True,
-    'cookiefile': 'cookies.txt', # سنتركه احتياطياً لباقي المنصات
+    'cookiefile': 'cookies.txt', 
 }
+
+# دالة صغيرة لاستخراج كود يوتيوب لتشغيل المشغل
+def get_yt_id(url):
+    match = re.search(r'(?:v=|/)([0-9A-Za-z_-]{11}).*', url)
+    return match.group(1) if match else None
 
 @app.route('/')
 def index():
@@ -31,15 +37,13 @@ def get_info():
     if not url:
         return jsonify({'error': 'Please provide a valid URL'}), 400
 
-    # 🧠 العقل الأول: نظام يوتيوب الخارجي (لتخطي الحظر والكوكيز التالف)
+    # 🧠 العقل الأول: يوتيوب (جلب رابط التحميل + رابط المشغل)
     if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
         try:
             headers = {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-                'Origin': 'https://cobalt.tools',
-                'Referer': 'https://cobalt.tools/'
+                'User-Agent': 'Mozilla/5.0'
             }
             payload = {'url': url}
             response = requests.post('https://api.cobalt.tools/api/json', json=payload, headers=headers, timeout=10)
@@ -47,25 +51,41 @@ def get_info():
             if response.status_code == 200:
                 res_data = response.json()
                 if res_data.get('url'):
+                    yt_id = get_yt_id(url)
+                    # صنع رابط المشغل الرسمي ليوتيوب
+                    preview_url = f"https://www.youtube.com/embed/{yt_id}" if yt_id else None
+                    
                     return jsonify({
                         'title': 'YouTube Video',
                         'thumbnail': 'https://img.icons8.com/color/96/000000/youtube-play.png', 
-                        'preview_type': 'image', # نكتفي بصورة مصغرة لتسريع الموقع ومنع أخطاء المتصفح
+                        'preview_url': preview_url,
+                        'preview_type': 'iframe' if preview_url else 'image',
                         'formats': [{
                             'id': 'best',
                             'resolution': 'تحميل يوتيوب المباشر (سريع جداً)',
                             'ext': 'mp4',
-                            'url': res_data.get('url') # التحميل سيتم من السيرفر الخارجي مباشرة!
+                            'url': res_data.get('url')
                         }]
                     })
         except:
-            pass # في حال تعطل العقل الأول، سينتقل للعقل الثاني تلقائياً
+            pass 
 
-    # 🧠 العقل الثاني: النظام المحلي لباقي المنصات (تيك توك، فيسبوك، الخ)
+    # 🧠 العقل الثاني: باقي المنصات (تيك توك، انستا، الخ)
     try:
         with yt_dlp.YoutubeDL(YDL_BASE_OPTS) as ydl:
             info = ydl.extract_info(url, download=False)
             
+            preview_url = None
+            preview_type = 'video'
+            
+            # صنع مشغل تيك توك الرسمي
+            if 'tiktok.com' in url.lower():
+                video_id = info.get('id')
+                preview_url = f"https://www.tiktok.com/embed/v2/{video_id}"
+                preview_type = 'iframe'
+            else:
+                preview_url = info.get('url') # مشغل فيديو عادي للبقية
+
             formats = [{
                 'id': 'best',
                 'resolution': 'تحميل أفضل جودة (MP4)',
@@ -75,8 +95,9 @@ def get_info():
 
             return jsonify({
                 'title': info.get('title', 'Video Downloader'),
-                'thumbnail': info.get('thumbnail', 'https://img.icons8.com/color/96/000000/video.png'),
-                'preview_type': 'image', # نكتفي بالصورة المصغرة لتفادي انهيار الموقع
+                'thumbnail': info.get('thumbnail', ''),
+                'preview_url': preview_url,
+                'preview_type': preview_type,
                 'formats': formats
             })
     except Exception as e:
@@ -85,7 +106,6 @@ def get_info():
 @app.route('/download_video')
 def download_video():
     url = request.args.get('url')
-    
     file_id = str(uuid.uuid4())
     filepath = os.path.join('downloads', f"{file_id}.%(ext)s")
     

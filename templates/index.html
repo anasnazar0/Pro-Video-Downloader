@@ -39,8 +39,15 @@
         .info-container { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 15px; padding-top: 25px; border-top: 2px dashed #E5E7EB; }
         .info-container h3 { margin: 0; color: var(--text-main); font-size: 18px; line-height: 1.5; word-break: break-word; direction: ltr; text-align: center;}
         
-        .dl-btn { background: #10B981; color: white; text-decoration: none; font-weight: bold; padding: 14px; border-radius: 10px; font-size: 16px; text-align: center; transition: 0.2s; display: block; width: 100%; max-width: 350px;}
-        .dl-btn:hover { background: #059669; transform: scale(1.02); box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);}
+        /* تنسيق أزرار التحميل الجديدة */
+        .buttons-container { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 400px; }
+        .dl-btn { text-decoration: none; font-weight: bold; padding: 14px; border-radius: 10px; font-size: 16px; text-align: center; transition: 0.2s; display: block; width: 100%; }
+        
+        .btn-high { background: #10B981; color: white; }
+        .btn-high:hover { background: #059669; transform: scale(1.02); box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);}
+        
+        .btn-low { background: #F3F4F6; color: #374151; border: 2px solid #E5E7EB; }
+        .btn-low:hover { background: #E5E7EB; transform: scale(1.02); }
     </style>
 </head>
 <body>
@@ -63,7 +70,11 @@
             
             <div class="info-container">
                 <h3 id="title"></h3>
-                <a id="downloadBtn" href="#" class="dl-btn">⬇️ تحميل الفيديو</a>
+                
+                <div class="buttons-container">
+                    <a id="btnHigh" href="#" class="dl-btn btn-high" target="_blank" rel="noopener noreferrer">⬇️ تحميل بأعلى جودة (مباشر)</a>
+                    <a id="btnLow" href="#" class="dl-btn btn-low">⬇️ تحميل جودة عادية (احتياطي)</a>
+                </div>
             </div>
         </div>
     </div>
@@ -83,11 +94,9 @@
         resultDiv.style.display = "none";
         btn.disabled = true;
         
-        // رسالة تنبيه لأن التحميل للسيرفر قد يأخذ وقتاً
-        btnText.innerText = "⏳ جاري سحب الفيديو للسيرفر...";
+        btnText.innerText = "⏳ جاري سحب وتجهيز الفيديو...";
 
         try {
-            // نستخدم الآن مسار /download الذي برمجته
             const response = await fetch('/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -100,18 +109,19 @@
 
             document.getElementById('title').innerText = data.title || 'Video Ready!';
             
-            // حقن الفيديو باستخدام رابط البث (stream_url) القادم من سيرفرك
             const mediaContainer = document.getElementById('media-container');
             const thumbSrc = data.thumbnail || 'https://img.icons8.com/color/96/000000/video.png';
             
+            // تشغيل البث الخفيف (480p) من سيرفرك
             mediaContainer.innerHTML = `
                 <video id="vid-player" controls preload="metadata" poster="${thumbSrc}" autoplay>
                     <source src="${data.stream_url}" type="video/mp4">
                 </video>
             `;
             
-            // ربط زر التحميل برابط الملف (download_url)
-            document.getElementById('downloadBtn').href = data.download_url;
+            // تعيين روابط التحميل للأزرار
+            document.getElementById('btnHigh').href = data.download_url_high;
+            document.getElementById('btnLow').href = data.download_url_low;
 
             resultDiv.style.display = "block";
         } catch (err) {

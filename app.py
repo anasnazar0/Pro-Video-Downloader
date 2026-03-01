@@ -20,11 +20,6 @@ YDL_BASE_OPTS = {
     'cookiefile': 'cookies.txt', 
 }
 
-# دالة ذكية لاستخراج معرف اليوتيوب لضمان عمل المشغل
-def get_yt_id(url):
-    match = re.search(r'(?:v=|/)([0-9A-Za-z_-]{11}).*', url)
-    return match.group(1) if match else None
-
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -37,7 +32,7 @@ def get_info():
     if not url:
         return jsonify({'error': 'Please provide a valid URL'}), 400
 
-    # 🔴 معالجة يوتيوب (جلب المشغل الرسمي والرابط المباشر)
+    # 🔴 يوتيوب: جلب الرابط المباشر للتشغيل والتحميل
     if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
         try:
             headers = {
@@ -50,40 +45,40 @@ def get_info():
             
             if response.status_code == 200:
                 res_data = response.json()
-                if res_data.get('url'):
-                    yt_id = get_yt_id(url)
-                    preview_url = f"https://www.youtube.com/embed/{yt_id}" if yt_id else None
+                direct_url = res_data.get('url')
+                if direct_url:
+                    match = re.search(r'(?:v=|/)([0-9A-Za-z_-]{11}).*', url)
+                    yt_id = match.group(1) if match else None
                     thumbnail = f"https://img.youtube.com/vi/{yt_id}/hqdefault.jpg" if yt_id else "https://img.icons8.com/color/96/000000/youtube-play.png"
                     
                     return jsonify({
                         'title': 'YouTube Video',
                         'thumbnail': thumbnail,
-                        'preview_url': preview_url,
-                        'preview_type': 'iframe' if preview_url else 'image',
+                        'preview_url': direct_url, # رابط مباشر للتشغيل في مشغل الموقع
+                        'preview_type': 'video',
                         'formats': [{
                             'id': 'best',
                             'resolution': '⬇️ تحميل مباشر وسريع (MP4)',
                             'ext': 'mp4',
-                            'url': res_data.get('url')
+                            'url': direct_url
                         }]
                     })
         except:
-            pass # الانتقال للمحرك الأساسي في حال فشل السيرفر الخارجي
+            pass 
 
-    # 🔵 معالجة باقي المنصات (تيك توك، فيسبوك، انستا)
+    # 🔵 باقي المنصات (تيك توك، انستا وغيرها)
     try:
         with yt_dlp.YoutubeDL(YDL_BASE_OPTS) as ydl:
             info = ydl.extract_info(url, download=False)
             
-            preview_url = None
-            preview_type = 'video'
-            
-            if 'tiktok.com' in url.lower():
-                video_id = info.get('id')
-                preview_url = f"https://www.tiktok.com/embed/v2/{video_id}"
-                preview_type = 'iframe'
-            else:
-                preview_url = info.get('url')
+            # محاولة جلب رابط صالح للتشغيل المباشر داخل المتصفح
+            preview_url = info.get('url')
+            formats_list = info.get('formats', [])
+            for f in formats_list:
+                # نبحث عن صيغة عادية للتشغيل المسبق
+                if f.get('vcodec') and 'avc' in f.get('vcodec').lower() and f.get('ext') == 'mp4' and f.get('acodec') != 'none':
+                    preview_url = f.get('url')
+                    break
 
             formats = [{
                 'id': 'best',
@@ -96,7 +91,7 @@ def get_info():
                 'title': info.get('title', 'Video Downloader'),
                 'thumbnail': info.get('thumbnail', ''),
                 'preview_url': preview_url,
-                'preview_type': preview_type,
+                'preview_type': 'video',
                 'formats': formats
             })
     except Exception as e:
@@ -109,8 +104,10 @@ def download_video():
     filepath = os.path.join('downloads', f"{file_id}.%(ext)s")
     
     dl_opts = dict(YDL_BASE_OPTS)
+    
+    # 🪄 السحر هنا: إجبار yt-dlp على تحميل الفيديوهات بصيغة (H.264/AVC) المتوافقة مع ويندوز
     dl_opts.update({
-        'format': 'bestvideo+bestaudio/best',
+        'format': 'bestvideo[vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc][ext=mp4]/best[ext=mp4]/best',
         'outtmpl': filepath,
         'merge_output_format': 'mp4',
     })

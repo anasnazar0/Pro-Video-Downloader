@@ -1,125 +1,108 @@
 import os
 import uuid
-import re
-from flask import Flask, render_template, request, jsonify, send_file, after_this_request
+from flask import Flask, render_template, request, jsonify, send_file, Response
 import yt_dlp
-
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-os.environ["PATH"] += os.pathsep + CURRENT_DIR
 
 app = Flask(__name__)
 
-if not os.path.exists('downloads'):
-    os.makedirs('downloads')
+DOWNLOAD_FOLDER = "downloads"
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# إعدادات بسيطة جداً لمرحلة "التحليل" فقط لتجنب أخطاء الصيغ المفقودة
-YDL_BASE_OPTS = {
-    'quiet': True,
-    'no_warnings': True,
-    'nocheckcertificate': True,
-    'cookiefile': 'cookies.txt', 
+YDL_OPTS = {
+    "quiet": True,
+    "no_warnings": True,
+    "nocheckcertificate": True,
 }
 
-def get_yt_id(url):
-    match = re.search(r'(?:v=|/)([0-9A-Za-z_-]{11}).*', url)
-    return match.group(1) if match else None
-
-@app.route('/')
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
-@app.route('/get_info', methods=['POST'])
-def get_info():
+
+@app.route("/download", methods=["POST"])
+def download():
     data = request.get_json()
-    url = data.get('url')
+    url = data.get("url")
 
     if not url:
-        return jsonify({'error': 'Please provide a valid URL'}), 400
+        return jsonify({"error": "Invalid URL"}), 400
 
-    # الاعتماد الكلي على yt-dlp مع ملف الكوكيز (الغينا السيرفر الخارجي لأنه مزدحم ويحظرنا)
-    try:
-        with yt_dlp.YoutubeDL(YDL_BASE_OPTS) as ydl:
-            info = ydl.extract_info(url, download=False)
-            
-            preview_url = None
-            preview_type = 'video'
-            thumbnail = info.get('thumbnail', '')
-            
-            # العودة للمشغلات الرسمية (Iframe) لحل مشكلة الشاشة السوداء في تيك توك ويوتيوب
-            if 'tiktok.com' in url.lower():
-                video_id = info.get('id')
-                preview_url = f"https://www.tiktok.com/embed/v2/{video_id}"
-                preview_type = 'iframe'
-            elif 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
-                video_id = info.get('id') or get_yt_id(url)
-                preview_url = f"https://www.youtube.com/embed/{video_id}" if video_id else None
-                preview_type = 'iframe'
-            else:
-                # محاولة جلب فيديو مباشر لباقي المنصات
-                formats_list = info.get('formats', [])
-                for f in reversed(formats_list):
-                    if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4':
-                        preview_url = f.get('url')
-                        break
-
-            formats = [{
-                'id': 'best',
-                'resolution': '⬇️ تحميل أفضل جودة (MP4)',
-                'ext': 'mp4',
-                'url': f'/download_video?url={url}'
-            }]
-
-            return jsonify({
-                'title': info.get('title', 'Video Ready'),
-                'thumbnail': thumbnail,
-                'preview_url': preview_url,
-                'preview_type': preview_type,
-                'formats': formats
-            })
-    except Exception as e:
-        return jsonify({'error': f"فشل التحليل، تأكد من الرابط أو الكوكيز: {str(e)}"}), 500
-
-@app.route('/download_video')
-def download_video():
-    url = request.args.get('url')
     file_id = str(uuid.uuid4())
-    filepath = os.path.join('downloads', f"{file_id}.%(ext)s")
-    
-    dl_opts = dict(YDL_BASE_OPTS)
-    
-    # هنا فقط نجبر الأداة على الدمج والتنزيل بصيغة تدعم الويندوز
-    dl_opts.update({
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        'outtmpl': filepath,
-        'merge_output_format': 'mp4',
+    filepath = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
+
+    opts = dict(YDL_OPTS)
+    opts.update({
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "outtmpl": filepath,
+        "merge_output_format": "mp4",
     })
-    
+
     try:
-        with yt_dlp.YoutubeDL(dl_opts) as ydl:
+        with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
-        
-        final_filepath = None
-        for file in os.listdir('downloads'):
-            if file.startswith(file_id):
-                final_filepath = os.path.join('downloads', file)
+
+        final_file = None
+        for f in os.listdir(DOWNLOAD_FOLDER):
+            if f.startswith(file_id):
+                final_file = f
                 break
-                
-        if not final_filepath:
-            return "Download failed.", 500
-        
-        @after_this_request
-        def remove_file(response):
-            try:
-                if os.path.exists(final_filepath):
-                    os.remove(final_filepath)
-            except:
-                pass
-            return response
 
-        return send_file(final_filepath, as_attachment=True, download_name="Video.mp4")
-        
+        if not final_file:
+            return jsonify({"error": "Download failed"}), 500
+
+        return jsonify({
+            "stream_url": f"/stream/{final_file}",
+            "download_url": f"/file/{final_file}"
+        })
+
     except Exception as e:
-        return f"Error: {str(e)}", 500
+        return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+
+@app.route("/stream/<filename>")
+def stream_video(filename):
+    filepath = os.path.join(DOWNLOAD_FOLDER, filename)
+
+    if not os.path.exists(filepath):
+        return "File not found", 404
+
+    range_header = request.headers.get("Range", None)
+    if not range_header:
+        return send_file(filepath, mimetype="video/mp4")
+
+    size = os.path.getsize(filepath)
+    byte1, byte2 = 0, None
+
+    match = range_header.replace("bytes=", "").split("-")
+    if match[0]:
+        byte1 = int(match[0])
+    if len(match) > 1 and match[1]:
+        byte2 = int(match[1])
+
+    byte2 = byte2 if byte2 is not None else size - 1
+    length = byte2 - byte1 + 1
+
+    with open(filepath, "rb") as f:
+        f.seek(byte1)
+        data = f.read(length)
+
+    response = Response(data, 206, mimetype="video/mp4")
+    response.headers.add("Content-Range", f"bytes {byte1}-{byte2}/{size}")
+    response.headers.add("Accept-Ranges", "bytes")
+    response.headers.add("Content-Length", str(length))
+
+    return response
+
+
+@app.route("/file/<filename>")
+def download_file(filename):
+    filepath = os.path.join(DOWNLOAD_FOLDER, filename)
+
+    if not os.path.exists(filepath):
+        return "File not found", 404
+
+    return send_file(filepath, as_attachment=True)
+
+
+if __name__ == "__main__":
+    app.run(debug=True)

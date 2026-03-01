@@ -9,21 +9,20 @@ app = Flask(__name__)
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# إعدادات التحميل لضمان العمل على كل الأجهزة
+# الإعدادات العامة
 YDL_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "nocheckcertificate": True,
-    "cookiefile": "cookies.txt", # لا تنسى إبقاء ملف الكوكيز لتخطي حظر يوتيوب
+    "cookiefile": "cookies.txt", 
 }
 
-# دالة التنظيف التلقائي: تمسح الفيديوهات التي مر عليها أكثر من 30 دقيقة
+# دالة تنظيف السيرفر لحمايته من الامتلاء (تحذف ما مر عليه 30 دقيقة)
 def cleanup_old_files():
     try:
         current_time = time.time()
         for filename in os.listdir(DOWNLOAD_FOLDER):
             filepath = os.path.join(DOWNLOAD_FOLDER, filename)
-            # مسح الملفات الأقدم من 1800 ثانية (30 دقيقة)
             if os.path.isfile(filepath) and (current_time - os.path.getmtime(filepath) > 1800):
                 os.remove(filepath)
     except Exception as e:
@@ -35,7 +34,6 @@ def index():
 
 @app.route("/download", methods=["POST"])
 def download():
-    # تشغيل التنظيف التلقائي في كل مرة يطلب فيها شخص فيديو جديد
     cleanup_old_files()
     
     data = request.get_json()
@@ -47,22 +45,35 @@ def download():
     file_id = str(uuid.uuid4())
     filepath = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
 
-    opts = dict(YDL_OPTS)
-    opts.update({
-        "format": "bestvideo[vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        "outtmpl": filepath,
-        "merge_output_format": "mp4",
-    })
-
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            # استخراج العنوان والصورة المصغرة قبل التحميل
-            info = ydl.extract_info(url, download=False)
-            title = info.get('title', 'Video')
+        # 1. المرحلة الأولى: استخراج الرابط المباشر بأعلى جودة للتحميل
+        best_download_url = None
+        with yt_dlp.YoutubeDL(YDL_OPTS) as ydl_info:
+            info = ydl_info.extract_info(url, download=False)
+            title = info.get('title', 'Video Ready')
             thumbnail = info.get('thumbnail', 'https://img.icons8.com/color/96/000000/video.png')
             
-            # التحميل الفعلي للسيرفر
-            ydl.download([url])
+            # البحث عن أعلى جودة مدمجة (MP4) للتحميل المباشر
+            formats = info.get('formats', [])
+            for f in reversed(formats):
+                if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4':
+                    best_download_url = f.get('url')
+                    break
+            
+            # إذا لم يجد صيغة مدمجة، نأخذ الرابط الافتراضي
+            if not best_download_url:
+                best_download_url = info.get('url')
+
+        # 2. المرحلة الثانية: تحميل نسخة خفيفة (480p) للسيرفر من أجل البث
+        stream_opts = dict(YDL_OPTS)
+        stream_opts.update({
+            "format": "bestvideo[height<=480][vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[ext=mp4]/best",
+            "outtmpl": filepath,
+            "merge_output_format": "mp4",
+        })
+
+        with yt_dlp.YoutubeDL(stream_opts) as ydl_down:
+            ydl_down.download([url])
 
         final_file = None
         for f in os.listdir(DOWNLOAD_FOLDER):
@@ -71,14 +82,15 @@ def download():
                 break
 
         if not final_file:
-            return jsonify({"error": "فشل تحميل الفيديو."}), 500
+            return jsonify({"error": "فشل تجهيز الفيديو للبث."}), 500
 
-        # إرجاع روابط البث والتحميل الخاصة بسيرفرك للواجهة
+        # إرجاع الروابط (رابط البث، رابط التحميل العالي، ورابط التحميل الاحتياطي)
         return jsonify({
             "title": title,
             "thumbnail": thumbnail,
             "stream_url": f"/stream/{final_file}",
-            "download_url": f"/file/{final_file}"
+            "download_url_high": best_download_url if best_download_url else f"/file/{final_file}",
+            "download_url_low": f"/file/{final_file}"
         })
 
     except Exception as e:
@@ -87,21 +99,17 @@ def download():
 @app.route("/stream/<filename>")
 def stream_video(filename):
     filepath = os.path.join(DOWNLOAD_FOLDER, filename)
-
     if not os.path.exists(filepath):
         return "الملف غير موجود أو انتهت صلاحيته", 404
-
-    # السحر هنا: conditional=True تقوم بعمل Stream احترافي يدعم التقديم والتأخير بدون استهلاك للرام!
+    # البث الذكي المتقطع لإنقاذ الرام
     return send_file(filepath, mimetype="video/mp4", conditional=True)
 
 @app.route("/file/<filename>")
 def download_file(filename):
     filepath = os.path.join(DOWNLOAD_FOLDER, filename)
-
     if not os.path.exists(filepath):
         return "الملف غير موجود أو انتهت صلاحيته", 404
-
     return send_file(filepath, as_attachment=True, download_name="Universal_Video.mp4")
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, port=5000)

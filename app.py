@@ -32,7 +32,7 @@ def get_info():
     if not url:
         return jsonify({'error': 'Please provide a valid URL'}), 400
 
-    # 🔴 يوتيوب: جلب الرابط المباشر للتشغيل والتحميل
+    # 🔴 يوتيوب (يتم جلب الرابط السري المباشر عبر السيرفر الخارجي لتخطي الحظر)
     if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
         try:
             headers = {
@@ -54,7 +54,7 @@ def get_info():
                     return jsonify({
                         'title': 'YouTube Video',
                         'thumbnail': thumbnail,
-                        'preview_url': direct_url, # رابط مباشر للتشغيل في مشغل الموقع
+                        'preview_url': direct_url, # الرابط الخام للتشغيل السري
                         'preview_type': 'video',
                         'formats': [{
                             'id': 'best',
@@ -66,17 +66,23 @@ def get_info():
         except:
             pass 
 
-    # 🔵 باقي المنصات (تيك توك، انستا وغيرها)
+    # 🔵 القاعدة الموحدة لجميع المنصات الأخرى (فيسبوك، انستا، تيك توك، X)
     try:
         with yt_dlp.YoutubeDL(YDL_BASE_OPTS) as ydl:
             info = ydl.extract_info(url, download=False)
             
-            # محاولة جلب رابط صالح للتشغيل المباشر داخل المتصفح
+            # البحث عن الرابط الخام السري الذي يحتوي على صوت وصورة معاً ويعمل على المتصفح (MP4)
             preview_url = info.get('url')
             formats_list = info.get('formats', [])
-            for f in formats_list:
-                # نبحث عن صيغة عادية للتشغيل المسبق
-                if f.get('vcodec') and 'avc' in f.get('vcodec').lower() and f.get('ext') == 'mp4' and f.get('acodec') != 'none':
+            
+            # فلترة ذكية لاختيار أفضل رابط للعرض المباشر
+            for f in reversed(formats_list):
+                vcodec = f.get('vcodec', 'none')
+                acodec = f.get('acodec', 'none')
+                ext = f.get('ext', '')
+                
+                # نريد فيديو بصيغة MP4 وفيه صوت وصورة (ليس مفصولاً)
+                if vcodec != 'none' and acodec != 'none' and ext == 'mp4':
                     preview_url = f.get('url')
                     break
 
@@ -91,7 +97,7 @@ def get_info():
                 'title': info.get('title', 'Video Downloader'),
                 'thumbnail': info.get('thumbnail', ''),
                 'preview_url': preview_url,
-                'preview_type': 'video',
+                'preview_type': 'video', # جميع المنصات ستستخدم المشغل السري الآن
                 'formats': formats
             })
     except Exception as e:
@@ -105,7 +111,7 @@ def download_video():
     
     dl_opts = dict(YDL_BASE_OPTS)
     
-    # 🪄 السحر هنا: إجبار yt-dlp على تحميل الفيديوهات بصيغة (H.264/AVC) المتوافقة مع ويندوز
+    # الإجبار على صيغة H.264 لتعمل على الويندوز وكل الأجهزة
     dl_opts.update({
         'format': 'bestvideo[vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc][ext=mp4]/best[ext=mp4]/best',
         'outtmpl': filepath,

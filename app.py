@@ -67,7 +67,8 @@ def download():
         # 2. المرحلة الثانية: تحميل نسخة خفيفة (480p) للسيرفر من أجل البث
         stream_opts = dict(YDL_OPTS)
         stream_opts.update({
-            "format": "bestvideo[height<=480][vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[ext=mp4]/best",
+            # هذا السطر السحري يبحث عن كل البدائل الممكنة من الأفضل للأسوأ قبل أن يستسلم
+            "format": "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]/bestvideo+bestaudio/best",
             "outtmpl": filepath,
             "merge_output_format": "mp4",
         })
@@ -113,3 +114,4 @@ def download_file(filename):
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+

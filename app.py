@@ -1,5 +1,6 @@
 import os
 import uuid
+import requests
 from flask import Flask, render_template, request, jsonify, send_file, after_this_request
 import yt_dlp
 
@@ -11,12 +12,11 @@ app = Flask(__name__)
 if not os.path.exists('downloads'):
     os.makedirs('downloads')
 
-# إعدادات تخطي الحظر باستخدام الكوكيز الخاصة بك
 YDL_BASE_OPTS = {
     'quiet': True,
     'no_warnings': True,
     'nocheckcertificate': True,
-    'cookiefile': 'cookies.txt', 
+    'cookiefile': 'cookies.txt', # سنتركه احتياطياً لباقي المنصات
 }
 
 @app.route('/')
@@ -31,27 +31,41 @@ def get_info():
     if not url:
         return jsonify({'error': 'Please provide a valid URL'}), 400
 
+    # 🧠 العقل الأول: نظام يوتيوب الخارجي (لتخطي الحظر والكوكيز التالف)
+    if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
+        try:
+            headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                'Origin': 'https://cobalt.tools',
+                'Referer': 'https://cobalt.tools/'
+            }
+            payload = {'url': url}
+            response = requests.post('https://api.cobalt.tools/api/json', json=payload, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                res_data = response.json()
+                if res_data.get('url'):
+                    return jsonify({
+                        'title': 'YouTube Video',
+                        'thumbnail': 'https://img.icons8.com/color/96/000000/youtube-play.png', 
+                        'preview_type': 'image', # نكتفي بصورة مصغرة لتسريع الموقع ومنع أخطاء المتصفح
+                        'formats': [{
+                            'id': 'best',
+                            'resolution': 'تحميل يوتيوب المباشر (سريع جداً)',
+                            'ext': 'mp4',
+                            'url': res_data.get('url') # التحميل سيتم من السيرفر الخارجي مباشرة!
+                        }]
+                    })
+        except:
+            pass # في حال تعطل العقل الأول، سينتقل للعقل الثاني تلقائياً
+
+    # 🧠 العقل الثاني: النظام المحلي لباقي المنصات (تيك توك، فيسبوك، الخ)
     try:
         with yt_dlp.YoutubeDL(YDL_BASE_OPTS) as ydl:
-            # استخراج المعلومات بدون تحميل لمعاينة الفيديو
             info = ydl.extract_info(url, download=False)
             
-            preview_url = None
-            preview_type = 'video'
-            
-            # معالجة مشغلات الفيديو (تيك توك ويوتيوب)
-            if 'tiktok.com' in url.lower():
-                video_id = info.get('id')
-                preview_url = f"https://www.tiktok.com/embed/v2/{video_id}"
-                preview_type = 'iframe'
-            elif 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
-                video_id = info.get('id')
-                preview_url = f"https://www.youtube.com/embed/{video_id}"
-                preview_type = 'iframe'
-            else:
-                preview_url = info.get('url')
-
-            # الاعتماد على زر واحد يدمج أفضل صوت وصورة عبر FFmpeg
             formats = [{
                 'id': 'best',
                 'resolution': 'تحميل أفضل جودة (MP4)',
@@ -61,14 +75,12 @@ def get_info():
 
             return jsonify({
                 'title': info.get('title', 'Video Downloader'),
-                'thumbnail': info.get('thumbnail'),
-                'preview_url': preview_url, 
-                'preview_type': preview_type,
+                'thumbnail': info.get('thumbnail', 'https://img.icons8.com/color/96/000000/video.png'),
+                'preview_type': 'image', # نكتفي بالصورة المصغرة لتفادي انهيار الموقع
                 'formats': formats
             })
-            
     except Exception as e:
-        return jsonify({'error': f"يوتيوب يرفض الرابط: {str(e)}"}), 500
+        return jsonify({'error': f"يوتيوب أو المنصة ترفض الرابط مؤقتاً. حاول لاحقاً."}), 500
 
 @app.route('/download_video')
 def download_video():
@@ -78,8 +90,6 @@ def download_video():
     filepath = os.path.join('downloads', f"{file_id}.%(ext)s")
     
     dl_opts = dict(YDL_BASE_OPTS)
-    
-    # السر هنا: إجبار FFmpeg على دمج أفضل فيديو وأفضل صوت في ملف واحد
     dl_opts.update({
         'format': 'bestvideo+bestaudio/best',
         'outtmpl': filepath,
@@ -99,7 +109,6 @@ def download_video():
         if not final_filepath:
             return "Download failed.", 500
         
-        # التنظيف الذاتي للسيرفر
         @after_this_request
         def remove_file(response):
             try:
@@ -112,8 +121,7 @@ def download_video():
         return send_file(final_filepath, as_attachment=True, download_name="Video_Pro.mp4")
         
     except Exception as e:
-        return f"حدث خطأ أثناء التحميل: {str(e)}", 500
+        return f"Error: {str(e)}", 500
 
 if __name__ == '__main__':
-    # تشغيل السيرفر محلياً (عند التجربة على الكمبيوتر)
     app.run(debug=True, port=5000)

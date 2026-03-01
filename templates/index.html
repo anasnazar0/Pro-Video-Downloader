@@ -7,45 +7,22 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
         
-        :root { 
-            --primary: #4F46E5; 
-            --primary-hover: #4338CA;
-            --bg: #F3F4F6; 
-            --card-bg: #FFFFFF;
-            --text-main: #1F2937;
-        }
-        
+        :root { --primary: #4F46E5; --primary-hover: #4338CA; --bg: #F3F4F6; --card-bg: #FFFFFF; --text-main: #1F2937; }
         * { box-sizing: border-box; font-family: 'Tajawal', sans-serif; }
-        
         body { background: var(--bg); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
         
-        .container { 
-            width: 100%; max-width: 850px; background: var(--card-bg); 
-            padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); 
-        }
-        
+        .container { width: 100%; max-width: 850px; background: var(--card-bg); padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
         h1 { color: var(--text-main); text-align: center; margin-bottom: 25px; font-weight: 700; direction: ltr;}
         
         .input-group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 25px; }
         @media (min-width: 480px) { .input-group { flex-direction: row; } } 
-        
-        input { 
-            flex: 1; padding: 14px 16px; border: 2px solid #E5E7EB; 
-            border-radius: 10px; outline: none; font-size: 16px; transition: 0.3s;
-        }
+        input { flex: 1; padding: 14px 16px; border: 2px solid #E5E7EB; border-radius: 10px; outline: none; font-size: 16px; transition: 0.3s; }
         input:focus { border-color: var(--primary); }
-        
-        button { 
-            background: var(--primary); color: white; border: none; 
-            padding: 14px 24px; border-radius: 10px; cursor: pointer; 
-            font-weight: bold; font-size: 16px; transition: 0.3s;
-            display: flex; justify-content: center; align-items: center; min-width: 140px;
-        }
+        button { background: var(--primary); color: white; border: none; padding: 14px 24px; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.3s; min-width: 140px; }
         button:hover { background: var(--primary-hover); transform: translateY(-2px); }
         button:disabled { background: #9CA3AF; cursor: not-allowed; transform: none; }
         
         #error-msg { display: none; background: #FEE2E2; color: #B91C1C; padding: 12px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-size: 15px; font-weight: bold;}
-        
         #result { display: none; margin-top: 10px; animation: fadeIn 0.5s ease; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
@@ -57,24 +34,13 @@
             display: flex; justify-content: center; align-items: center; 
             aspect-ratio: 16/9; max-height: 500px; position: relative;
         }
+        .media-container iframe, .media-container video, .media-container img { width: 100%; height: 100%; border: none; display: block; object-fit: contain; }
         
-        .media-container video, .media-container img { 
-            width: 100%; height: 100%; border: none; display: block; object-fit: contain; 
-        }
-        
-        .info-container { 
-            width: 100%; display: flex; flex-direction: column; align-items: center; gap: 15px; 
-            padding-top: 25px; border-top: 2px dashed #E5E7EB; 
-        }
+        .info-container { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 15px; padding-top: 25px; border-top: 2px dashed #E5E7EB; }
         .info-container h3 { margin: 0; color: var(--text-main); font-size: 18px; line-height: 1.5; word-break: break-word; direction: ltr; text-align: center;}
         
         .format-list { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 350px; }
-        
-        .dl-btn { 
-            background: #10B981; color: white; text-decoration: none; 
-            font-weight: bold; padding: 14px; border-radius: 10px; font-size: 16px; 
-            text-align: center; transition: 0.2s; display: block; width: 100%;
-        }
+        .dl-btn { background: #10B981; color: white; text-decoration: none; font-weight: bold; padding: 14px; border-radius: 10px; font-size: 16px; text-align: center; transition: 0.2s; display: block; width: 100%; }
         .dl-btn:hover { background: #059669; transform: scale(1.02); box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);}
     </style>
 </head>
@@ -82,20 +48,16 @@
 
 <div class="container">
     <h1>Universal Video Downloader</h1>
-    
     <div id="error-msg"></div>
-
     <div class="input-group">
-        <input type="text" id="urlInput" placeholder="ضع الرابط هنا (يوتيوب، تيك توك، انستغرام، فيسبوك...)">
+        <input type="text" id="urlInput" placeholder="ضع الرابط هنا (يوتيوب، تيك توك، انستغرام...)">
         <button id="searchBtn" onclick="fetchVideo()">
             <span id="btnText">تحليل الرابط</span>
         </button>
     </div>
-
     <div id="result">
         <div class="video-card">
             <div id="media-container" class="media-container"></div>
-            
             <div class="info-container">
                 <h3 id="title"></h3>
                 <div id="formats" class="format-list"></div>
@@ -112,10 +74,7 @@
         const resultDiv = document.getElementById('result');
         const errorDiv = document.getElementById('error-msg');
 
-        if(!url) {
-            showError("الرجاء إدخال رابط صحيح أولاً.");
-            return;
-        }
+        if(!url) { showError("الرجاء إدخال رابط صحيح أولاً."); return; }
 
         errorDiv.style.display = "none";
         resultDiv.style.display = "none";
@@ -131,26 +90,23 @@
 
             const data = await response.json();
 
-            if(!response.ok || data.error) {
-                throw new Error(data.error || "فشل في جلب معلومات الفيديو.");
-            }
+            if(!response.ok || data.error) throw new Error(data.error || "فشل في جلب معلومات الفيديو.");
 
             document.getElementById('title').innerText = data.title || 'Video Ready!';
-            
             const mediaContainer = document.getElementById('media-container');
             const thumbSrc = data.thumbnail || 'https://img.icons8.com/color/96/000000/video.png';
             mediaContainer.innerHTML = ''; 
             
-            // 🎬 حقن المشغل السري لجميع المنصات (Stealth Player)
-            if (data.preview_url) {
+            // إضافة المشغل المناسب للبيانات (iframe لتيك توك ويوتيوب، video للبقية)
+            if (data.preview_type === 'iframe' && data.preview_url) {
+                mediaContainer.innerHTML = `<iframe src="${data.preview_url}" allowfullscreen></iframe>`;
+            } else if (data.preview_url) {
                 mediaContainer.innerHTML = `
-                    <video id="vid-player" controls preload="metadata" poster="${thumbSrc}" referrerpolicy="no-referrer" crossorigin="anonymous">
+                    <video id="vid-player" controls preload="metadata" poster="${thumbSrc}" referrerpolicy="no-referrer">
                         <source src="${data.preview_url}" type="video/mp4">
                     </video>
                     <img id="fallback-img" src="${thumbSrc}" style="display:none;" alt="Thumbnail">
                 `;
-                
-                // نظام الارتداد الذكي في حال اكتشاف السيرفر الأصلي للخدعة
                 document.getElementById('vid-player').onerror = function() {
                     this.style.display = 'none';
                     document.getElementById('fallback-img').style.display = 'block';
@@ -164,11 +120,7 @@
             
             if(data.formats && data.formats.length > 0) {
                 data.formats.forEach(f => {
-                    formatsDiv.innerHTML += `
-                        <a href="${f.url}" class="dl-btn" target="_blank">
-                            ${f.resolution}
-                        </a>
-                    `;
+                    formatsDiv.innerHTML += `<a href="${f.url}" class="dl-btn" target="_blank">${f.resolution}</a>`;
                 });
             } else {
                 throw new Error("لم يتم العثور على روابط تحميل.");

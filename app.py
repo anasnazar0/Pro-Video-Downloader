@@ -68,24 +68,26 @@ def download():
        # Phase 2: Download a lightweight version to the server for fast streaming.
         
        # Phase 2: Download a lightweight version to the server for fast streaming.
+       # Phase 2: Download a lightweight version to the server for fast streaming.
         stream_opts = dict(YDL_OPTS)
         
         # Domain-Based Routing: Handle YouTube separately from other platforms
         if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
-            # YouTube-specific configuration to bypass the missing FFmpeg on Render.
-            # 'best' fetches formats where video and audio are already merged by YouTube.
-            # We prioritize pre-merged MP4 up to 720p, then any MP4, then the absolute best pre-merged file.
+            # The Ultimate Fix for YouTube: Target specific pre-merged ITags directly.
+            # Format 18 = 360p MP4 (Video + Audio merged).
+            # Format 22 = 720p MP4 (Video + Audio merged).
+            # 'b' = Fallback to any pre-merged format if 18 and 22 are somehow missing.
             stream_opts.update({
-                "format": "best[ext=mp4][height<=720]/best[ext=mp4]/best",
-                "outtmpl": filepath,
-                # Explicitly removed 'merge_output_format' to prevent server crashes
+                "format": "18/22/b",
+                "outtmpl": filepath
+                # Do NOT add 'merge_output_format' here to prevent FFmpeg crashes.
             })
         else:
             # Default configuration for TikTok, Facebook, Instagram, etc.
             stream_opts.update({
                 "format": "bv*[height<=480]+ba/b[height<=480]/bv*+ba/b",
                 "outtmpl": filepath,
-                "merge_output_format": "mp4",
+                "merge_output_format": "mp4"
             })
 
         # Execute the download using the selected options
@@ -130,6 +132,7 @@ def download_file(filename):
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
 
 
 

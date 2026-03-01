@@ -20,7 +20,7 @@ YDL_BASE_OPTS = {
     'cookiefile': 'cookies.txt', 
 }
 
-# دالة صغيرة لاستخراج كود يوتيوب لتشغيل المشغل
+# دالة ذكية لاستخراج معرف اليوتيوب لضمان عمل المشغل
 def get_yt_id(url):
     match = re.search(r'(?:v=|/)([0-9A-Za-z_-]{11}).*', url)
     return match.group(1) if match else None
@@ -37,7 +37,7 @@ def get_info():
     if not url:
         return jsonify({'error': 'Please provide a valid URL'}), 400
 
-    # 🧠 العقل الأول: يوتيوب (جلب رابط التحميل + رابط المشغل)
+    # 🔴 معالجة يوتيوب (جلب المشغل الرسمي والرابط المباشر)
     if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
         try:
             headers = {
@@ -52,25 +52,25 @@ def get_info():
                 res_data = response.json()
                 if res_data.get('url'):
                     yt_id = get_yt_id(url)
-                    # صنع رابط المشغل الرسمي ليوتيوب
                     preview_url = f"https://www.youtube.com/embed/{yt_id}" if yt_id else None
+                    thumbnail = f"https://img.youtube.com/vi/{yt_id}/hqdefault.jpg" if yt_id else "https://img.icons8.com/color/96/000000/youtube-play.png"
                     
                     return jsonify({
                         'title': 'YouTube Video',
-                        'thumbnail': 'https://img.icons8.com/color/96/000000/youtube-play.png', 
+                        'thumbnail': thumbnail,
                         'preview_url': preview_url,
                         'preview_type': 'iframe' if preview_url else 'image',
                         'formats': [{
                             'id': 'best',
-                            'resolution': 'تحميل يوتيوب المباشر (سريع جداً)',
+                            'resolution': '⬇️ تحميل مباشر وسريع (MP4)',
                             'ext': 'mp4',
                             'url': res_data.get('url')
                         }]
                     })
         except:
-            pass 
+            pass # الانتقال للمحرك الأساسي في حال فشل السيرفر الخارجي
 
-    # 🧠 العقل الثاني: باقي المنصات (تيك توك، انستا، الخ)
+    # 🔵 معالجة باقي المنصات (تيك توك، فيسبوك، انستا)
     try:
         with yt_dlp.YoutubeDL(YDL_BASE_OPTS) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -78,17 +78,16 @@ def get_info():
             preview_url = None
             preview_type = 'video'
             
-            # صنع مشغل تيك توك الرسمي
             if 'tiktok.com' in url.lower():
                 video_id = info.get('id')
                 preview_url = f"https://www.tiktok.com/embed/v2/{video_id}"
                 preview_type = 'iframe'
             else:
-                preview_url = info.get('url') # مشغل فيديو عادي للبقية
+                preview_url = info.get('url')
 
             formats = [{
                 'id': 'best',
-                'resolution': 'تحميل أفضل جودة (MP4)',
+                'resolution': '⬇️ تحميل أفضل جودة (MP4)',
                 'ext': 'mp4',
                 'url': f'/download_video?url={url}'
             }]
@@ -101,7 +100,7 @@ def get_info():
                 'formats': formats
             })
     except Exception as e:
-        return jsonify({'error': f"يوتيوب أو المنصة ترفض الرابط مؤقتاً. حاول لاحقاً."}), 500
+        return jsonify({'error': f"عذراً، الرابط غير مدعوم أو محمي من قبل المنصة."}), 500
 
 @app.route('/download_video')
 def download_video():
@@ -138,7 +137,7 @@ def download_video():
                 pass
             return response
 
-        return send_file(final_filepath, as_attachment=True, download_name="Video_Pro.mp4")
+        return send_file(final_filepath, as_attachment=True, download_name="Video.mp4")
         
     except Exception as e:
         return f"Error: {str(e)}", 500

@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pro Video Downloader</title>
     <style>
-        /* استدعاء خط عربي وانجليزي أنيق */
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
         
         :root { 
@@ -21,14 +20,14 @@
         body { background: var(--bg); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
         
         .container { 
-            width: 100%; max-width: 650px; background: var(--card-bg); 
+            width: 100%; max-width: 700px; background: var(--card-bg); 
             padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); 
         }
         
         h1 { color: var(--text-main); text-align: center; margin-bottom: 25px; font-weight: 700; }
         
         .input-group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 25px; }
-        @media (min-width: 480px) { .input-group { flex-direction: row; } } /* ترتيب أفقي للكمبيوتر */
+        @media (min-width: 480px) { .input-group { flex-direction: row; } } 
         
         input { 
             flex: 1; padding: 14px 16px; border: 2px solid #E5E7EB; 
@@ -40,30 +39,34 @@
             background: var(--primary); color: white; border: none; 
             padding: 14px 24px; border-radius: 10px; cursor: pointer; 
             font-weight: bold; font-size: 16px; transition: 0.3s;
-            display: flex; justify-content: center; align-items: center;
+            display: flex; justify-content: center; align-items: center; min-width: 140px;
         }
         button:hover { background: var(--primary-hover); transform: translateY(-2px); }
         button:disabled { background: #9CA3AF; cursor: not-allowed; transform: none; }
         
-        /* تصميم رسالة الخطأ الأنيقة */
         #error-msg { display: none; background: #FEE2E2; color: #B91C1C; padding: 12px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-size: 15px; font-weight: bold;}
         
-        /* تأثير الظهور الناعم للنتيجة */
         #result { display: none; border-top: 1px solid #E5E7EB; padding-top: 25px; animation: fadeIn 0.5s ease; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
         .video-card { display: flex; flex-direction: column; gap: 20px; align-items: center; }
-        @media (min-width: 550px) { .video-card { flex-direction: row; align-items: flex-start; } }
+        @media (min-width: 600px) { .video-card { flex-direction: row; align-items: flex-start; } }
         
-        .thumbnail-container { width: 100%; max-width: 260px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); flex-shrink: 0; }
-        .thumbnail-container img { width: 100%; height: auto; display: block; object-fit: cover; aspect-ratio: 16/9;}
+        /* تصميم ذكي لمربع عرض الفيديو/المشغل */
+        .media-container { 
+            width: 100%; max-width: 300px; border-radius: 12px; overflow: hidden; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); flex-shrink: 0; background: #000;
+            display: flex; justify-content: center; align-items: center; aspect-ratio: 16/9;
+        }
+        .media-container iframe, .media-container video, .media-container img { 
+            width: 100%; height: 100%; border: none; display: block; object-fit: cover; 
+        }
         
         .info-container { flex: 1; width: 100%; display: flex; flex-direction: column; gap: 15px; }
         .info-container h3 { margin: 0; color: var(--text-main); font-size: 18px; line-height: 1.5; word-break: break-word; }
         
         .format-list { display: flex; flex-direction: column; gap: 10px; width: 100%; }
         
-        /* تصميم زر التحميل العملاق */
         .dl-btn { 
             background: #10B981; color: white; text-decoration: none; 
             font-weight: bold; padding: 14px; border-radius: 10px; font-size: 16px; 
@@ -88,9 +91,7 @@
 
     <div id="result">
         <div class="video-card">
-            <div class="thumbnail-container">
-                <img id="thumb" src="" alt="Thumbnail">
-            </div>
+            <div id="media-container" class="media-container"></div>
             
             <div class="info-container">
                 <h3 id="title"></h3>
@@ -113,7 +114,6 @@
             return;
         }
 
-        // إعادة ضبط الواجهة قبل بدء التحليل
         errorDiv.style.display = "none";
         resultDiv.style.display = "none";
         btn.disabled = true;
@@ -128,16 +128,25 @@
 
             const data = await response.json();
 
-            // التحقق من وجود أخطاء من السيرفر
             if(!response.ok || data.error) {
                 throw new Error(data.error || "فشل في جلب معلومات الفيديو.");
             }
 
-            // عرض الصورة والعنوان
-            document.getElementById('thumb').src = data.thumbnail || 'https://img.icons8.com/color/96/000000/video.png';
             document.getElementById('title').innerText = data.title || 'الفيديو جاهز للتحميل!';
             
-            // إنشاء زر التحميل
+            // حقن المشغل الذكي بناءً على نوع المنصة
+            const mediaContainer = document.getElementById('media-container');
+            mediaContainer.innerHTML = ''; 
+            
+            if (data.preview_type === 'iframe' && data.preview_url) {
+                mediaContainer.innerHTML = `<iframe src="${data.preview_url}" allowfullscreen></iframe>`;
+            } else if (data.preview_type === 'video' && data.preview_url) {
+                mediaContainer.innerHTML = `<video controls src="${data.preview_url}" poster="${data.thumbnail}"></video>`;
+            } else {
+                const thumbSrc = data.thumbnail || 'https://img.icons8.com/color/96/000000/video.png';
+                mediaContainer.innerHTML = `<img src="${thumbSrc}" alt="Thumbnail">`;
+            }
+            
             const formatsDiv = document.getElementById('formats');
             formatsDiv.innerHTML = "";
             
@@ -153,18 +162,15 @@
                 throw new Error("لم يتم العثور على روابط تحميل.");
             }
 
-            // إظهار النتيجة بتأثير حركي
             resultDiv.style.display = "block";
         } catch (err) {
             showError(err.message);
         } finally {
-            // إعادة الزر لحالته الطبيعية
             btn.disabled = false;
             btnText.innerText = "تحليل الرابط";
         }
     }
 
-    // دالة لعرض الأخطاء بشكل أنيق
     function showError(msg) {
         const errorDiv = document.getElementById('error-msg');
         errorDiv.innerText = "⚠️ " + msg;

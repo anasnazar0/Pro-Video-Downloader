@@ -52,13 +52,12 @@
         .video-card { display: flex; flex-direction: column; gap: 20px; align-items: center; }
         @media (min-width: 600px) { .video-card { flex-direction: row; align-items: flex-start; } }
         
-        /* تصميم مربع العرض ليكون متجاوباً واحترافياً */
         .media-container { 
             width: 100%; max-width: 300px; border-radius: 12px; overflow: hidden; 
             box-shadow: 0 4px 6px rgba(0,0,0,0.1); flex-shrink: 0; background: #000;
             display: flex; justify-content: center; align-items: center; aspect-ratio: 16/9; position: relative;
         }
-        .media-container iframe, .media-container video, .media-container img { 
+        .media-container video, .media-container img { 
             width: 100%; height: 100%; border: none; display: block; object-fit: cover; 
         }
         
@@ -138,18 +137,14 @@
             const thumbSrc = data.thumbnail || 'https://img.icons8.com/color/96/000000/video.png';
             mediaContainer.innerHTML = ''; 
             
-            // 🧠 نظام الارتداد الذكي (Smart Fallback)
-            if (data.preview_type === 'iframe' && data.preview_url) {
-                mediaContainer.innerHTML = `<iframe src="${data.preview_url}" allowfullscreen></iframe>`;
-            } else if (data.preview_type === 'video' && data.preview_url) {
-                // وضع مشغل الفيديو + صورة احتياطية مخفية
+            // 🎬 حقن مشغل الفيديو المباشر مع تجاوز الحظر (referrerpolicy)
+            if (data.preview_url) {
                 mediaContainer.innerHTML = `
-                    <video id="vid-player" controls preload="metadata" poster="${thumbSrc}">
+                    <video id="vid-player" controls preload="metadata" poster="${thumbSrc}" referrerpolicy="no-referrer">
                         <source src="${data.preview_url}" type="video/mp4">
                     </video>
                     <img id="fallback-img" src="${thumbSrc}" style="display:none;" alt="Thumbnail">
                 `;
-                // إذا رفض المتصفح تشغيل الفيديو، سيتم عرض الصورة المصغرة فوراً
                 document.getElementById('vid-player').onerror = function() {
                     this.style.display = 'none';
                     document.getElementById('fallback-img').style.display = 'block';

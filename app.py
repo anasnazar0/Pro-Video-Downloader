@@ -65,21 +65,31 @@ def download():
                 best_download_url = info.get('url')
 
         # 2. المرحلة الثانية: تحميل نسخة خفيفة (480p) للسيرفر من أجل البث
+       # Phase 2: Download a lightweight version to the server for fast streaming.
+        
         stream_opts = dict(YDL_OPTS)
-        stream_opts.update({
-            # The Magic String Breakdown:
-            # 1. bv*[height<=480]+ba : Best video (with or without audio) up to 480p + Best audio.
-            # 2. b[height<=480]      : Fallback to Best pre-merged file up to 480p.
-            # 3. bv*+ba              : Fallback to Best video + Best audio (ignore 480p limit if not found).
-            # 4. b                   : Ultimate fallback to Best pre-merged file (ignore 480p limit).
-            
-            "format": "bv*[height<=480]+ba/b[height<=480]/bv*+ba/b",
-            "outtmpl": filepath,
-            
-            # Ensures the final output to the browser is always a playable MP4
-            "merge_output_format": "mp4",
-        })
+        
+        # Domain-Based Routing: Handle YouTube separately from other platforms
+        if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
+            # YouTube-specific configuration
+            # Highly forgiving logic to prevent errors with Shorts and weird formats
+            stream_opts.update({
+                # 1. b[height<=480][ext=mp4] : Try getting a pre-merged 480p MP4 directly.
+                # 2. bv*[height<=480]+ba     : Try merging video up to 480p with best audio.
+                # 3. b/best                  : Ultimate fallback to whatever is best/available.
+                "format": "b[height<=480][ext=mp4]/bv*[height<=480]+ba/b/best",
+                "outtmpl": filepath,
+                "merge_output_format": "mp4",
+            })
+        else:
+            # Default configuration for TikTok, Facebook, Instagram, etc.
+            stream_opts.update({
+                "format": "bv*[height<=480]+ba/b[height<=480]/bv*+ba/b",
+                "outtmpl": filepath,
+                "merge_output_format": "mp4",
+            })
 
+        # Execute the download using the selected options
         with yt_dlp.YoutubeDL(stream_opts) as ydl_down:
             ydl_down.download([url])
 
@@ -121,5 +131,6 @@ def download_file(filename):
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
 
 

@@ -13,3 +13,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # تشغيل السيرفر باستخدام منفذ Render الديناميكي
 CMD gunicorn -w 2 -b 0.0.0.0:$PORT app:app
+RUN pip install --no-cache-dir -U yt-dlp

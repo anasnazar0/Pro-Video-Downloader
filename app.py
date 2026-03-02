@@ -9,7 +9,7 @@ app = Flask(__name__)
 # 🔑 إعدادات السيرفر التجاري (RapidAPI)
 # ==========================================
 # ⚠️ ضع مفتاحك السري هنا بين علامتي التنصيص
-RAPIDAPI_KEY = "d125b5130fmsha9cd16bd72f1fc4 Ibicce•snde077a9fb92f" 
+RAPIDAPI_KEY = "d125b5130fmsha9cd16bd72f1fc4p1b1ccejsnde077a9fb92f" 
 RAPIDAPI_HOST = "social-media-video-downloader.p.rapidapi.com"
 API_URL = "https://social-media-video-downloader.p.rapidapi.com/youtube/video_details"
 
@@ -101,3 +101,4 @@ def download():
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+

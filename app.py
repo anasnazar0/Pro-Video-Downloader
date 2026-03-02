@@ -1,56 +1,55 @@
-import os
-import re
-import uuid
-import time
-import urllib.parse
-import requests
+# ════════════════════════════════════════
+#  app.py — النسخة النهائية المُصلحة
+# ════════════════════════════════════════
+import os, re, uuid, time
 from flask import Flask, render_template, request, jsonify, Response, abort
-import yt_dlp
-import imageio_ffmpeg
+import yt_dlp, imageio_ffmpeg
 
 app = Flask(__name__)
-
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
-
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 
-# ✅ تم التحديث: إضافة خيارات مرنة ومسار FFmpeg لمنع الانهيار مع يوتيوب
-# ✅ خيارات الاستخراج: بدون تحديد صيغة لكي لا ينهار يوتيوب عند قراءة القائمة
-EXTRACT_OPTS = {
-    "quiet": True,
-    "no_warnings": True,
+BASE_OPTS = {
+    "quiet":            True,
+    "no_warnings":      True,
     "nocheckcertificate": True,
-    "extract_flat": False,
-    "ignoreerrors": True, # تخطي الأخطاء الطفيفة وعدم الانهيار
+    "extract_flat":     False,
 }
-
 if os.path.exists("cookies.txt"):
-    EXTRACT_OPTS["cookiefile"] = "cookies.txt"
+    BASE_OPTS["cookiefile"] = "cookies.txt"
 
-def get_best_download_url(formats):
-    """يجلب أفضل رابط مباشر (فيديو + صوت مدمجان)."""
-    if not formats:
-        return None
+
+def get_best_direct_url(info):
+    """أفضل رابط تحميل مباشر (فيديو+صوت مدمجان مسبقاً)."""
+    formats = info.get("formats", [])
+    
+    # mp4 مدمج بأعلى جودة
     for f in reversed(formats):
-        if (f.get('vcodec') not in ('none', None) and
-                f.get('acodec') not in ('none', None) and
-                f.get('ext') == 'mp4' and f.get('url')):
-            return f.get('url')
+        if (f.get('vcodec') not in ('none', None)
+                and f.get('acodec') not in ('none', None)
+                and f.get('ext') == 'mp4'
+                and f.get('url')):
+            return f['url']
+    
+    # أي صيغة مدمجة
     for f in reversed(formats):
-        if (f.get('vcodec') not in ('none', None) and
-                f.get('acodec') not in ('none', None) and f.get('url')):
-            return f.get('url')
-    return None
+        if (f.get('vcodec') not in ('none', None)
+                and f.get('acodec') not in ('none', None)
+                and f.get('url')):
+            return f['url']
+    
+    # آخر حل: الرابط المباشر في info
+    return info.get('url')
 
 
 def cleanup_old_files():
     try:
         now = time.time()
-        for f in os.listdir(DOWNLOAD_FOLDER):
-            path = os.path.join(DOWNLOAD_FOLDER, f)
-            if os.path.isfile(path) and now - os.path.getmtime(path) > 7200:
-                os.remove(path)
+        for fname in os.listdir(DOWNLOAD_FOLDER):
+            fpath = os.path.join(DOWNLOAD_FOLDER, fname)
+            if os.path.isfile(fpath) and now - os.path.getmtime(fpath) > 7200:
+                os.remove(fpath)
     except Exception:
         pass
 
@@ -64,101 +63,83 @@ def index():
 def download():
     cleanup_old_files()
 
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No JSON data received."}), 400
+    body = request.get_json()
+    if not body or not body.get("url"):
+        return jsonify({"error": "رابط غير صالح."}), 400
 
-    url = data.get("url")
-    if not url:
-        return jsonify({"error": "Invalid URL provided."}), 400
-
+    url      = body["url"]
     file_id  = str(uuid.uuid4())
     filepath = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
 
-    best_download_url = None
-    fallback_url      = None
-    title             = "Video Ready"
-    thumbnail         = "https://img.icons8.com/color/96/000000/video.png"
+    title     = "Video"
+    thumbnail = "https://img.icons8.com/color/96/000000/video.png"
+    dl_url    = None
+    fb_url    = None
 
-    # ── PHASE 1: استخراج المعلومات فقط ──
+    # ══ PHASE 1: استخراج المعلومات ══
     try:
-        with yt_dlp.YoutubeDL(EXTRACT_OPTS) as ydl:
-            info = ydl.extract_info(url, download=False)
-            
-            # إذا فشل الاستخراج تماماً (ignoreerrors أعاد None)
-            if not info:
-                raise Exception("The video might be restricted, private, or age-gated.")
-                
-            title        = info.get("title", title)
-            thumbnail    = info.get("thumbnail", thumbnail)
-            fallback_url = info.get("url")
-            formats      = info.get("formats", [])
-            
-            best_download_url = get_best_download_url(formats)
-            if not best_download_url:
-                best_download_url = fallback_url
+        with yt_dlp.YoutubeDL(BASE_OPTS) as ydl:
+            info      = ydl.extract_info(url, download=False)
+            title     = info.get("title", title)
+            thumbnail = info.get("thumbnail", thumbnail)
+            fb_url    = info.get("url")
+            dl_url    = get_best_direct_url(info)
     except Exception as e:
-        return jsonify({"error": f"ERROR: {str(e)}"}), 500
+        return jsonify({"error": f"فشل استخراج المعلومات: {e}"}), 500
 
-    # ── PHASE 2: تحميل الفيديو على السيرفر للبث ──
+    # ══ PHASE 2: تحميل على السيرفر للبث ══
     stream_url   = ""
     preview_type = "video"
 
     try:
-        stream_opts = dict(EXTRACT_OPTS)
-        stream_opts.update({
+        opts = {**BASE_OPTS,
+            "ffmpeg_location": FFMPEG_PATH,
             "format": (
-                "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/"
-                "bestvideo[height<=480]+bestaudio/"
-                "best[height<=480]/"
-                "best"
+                "bestvideo[height<=480]+bestaudio"
+                "/best[height<=480]"
+                "/best"
             ),
-            "outtmpl": filepath,
-            "merge_output_format": "mp4",
-        })
+            "outtmpl":              filepath,
+            "merge_output_format":  "mp4",
+            "postprocessors": [{
+                "key":             "FFmpegVideoRemuxer",
+                "preferedformat":  "mp4",
+            }],
+            "retries": 3,
+        }
 
-        with yt_dlp.YoutubeDL(stream_opts) as ydl_down:
-            ydl_down.download([url])
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.download([url])
 
-        final_file = None
-        for f in os.listdir(DOWNLOAD_FOLDER):
-            if f.startswith(file_id) and f.endswith(".mp4"):
-                final_file = f
-                break
-        if not final_file:
-            for f in os.listdir(DOWNLOAD_FOLDER):
-                if f.startswith(file_id):
-                    final_file = f
+        # ابحث عن الملف المُحمَّل
+        final = None
+        for fname in os.listdir(DOWNLOAD_FOLDER):
+            if fname.startswith(file_id):
+                # فضّل mp4
+                if fname.endswith(".mp4"):
+                    final = fname
                     break
+                final = fname   # احتفظ بأي امتداد كـ fallback
 
-        if final_file:
-            stream_url = f"/stream/{final_file}"
+        if final:
+            stream_url = f"/stream/{final}"
         else:
-            raise Exception("File not found after download.")
+            raise FileNotFoundError("الملف لم يُوجد بعد التحميل.")
 
     except Exception as e:
         preview_type = "error"
-        stream_url   = ""
         print(f"[STREAM ERROR] {e}")
-
-    # ✅ حيلة الوكيل (Proxy) لتخطي حظر تيك توك 403
-    # نمرر الروابط إلى مسار /proxy بدلاً من إرسالها للمستخدم مباشرة
-    safe_title = urllib.parse.quote(title)
-    
-    proxy_high = f"/proxy?title={safe_title}&url={urllib.parse.quote(best_download_url)}" if best_download_url else None
-    proxy_low  = f"/proxy?title={safe_title}&url={urllib.parse.quote(fallback_url)}" if fallback_url else None
 
     return jsonify({
         "title":             title,
         "thumbnail":         thumbnail,
         "stream_url":        stream_url,
         "preview_type":      preview_type,
-        "download_url_high": proxy_high,
-        "download_url_low":  proxy_low,
+        "download_url_high": dl_url,
+        "download_url_low":  fb_url,
     })
 
 
-# ── STREAM مع دعم Range Requests ──
 @app.route("/stream/<filename>")
 def stream_video(filename):
     filename = os.path.basename(filename)
@@ -167,85 +148,53 @@ def stream_video(filename):
     if not os.path.exists(path):
         abort(404)
 
-    file_size    = os.path.getsize(path)
-    range_header = request.headers.get("Range")
+    size  = os.path.getsize(path)
+    rng   = request.headers.get("Range")
 
-    if not range_header:
-        def full_stream():
-            with open(path, "rb") as f:
-                while chunk := f.read(1024 * 1024):
-                    yield chunk
-        return Response(full_stream(), status=200, mimetype="video/mp4",
-                        headers={"Content-Length": str(file_size),
-                                 "Accept-Ranges":  "bytes",
-                                 "Cache-Control":  "no-cache"})
+    if not rng:
+        return Response(
+            _read_chunks(path),
+            status=200, mimetype="video/mp4",
+            headers={"Content-Length": str(size),
+                     "Accept-Ranges":  "bytes",
+                     "Cache-Control":  "no-cache"}
+        )
 
-    match = re.search(r"bytes=(\d+)-(\d*)", range_header)
-    if not match:
+    m = re.search(r"bytes=(\d+)-(\d*)", rng)
+    if not m:
         abort(416)
 
-    byte1 = int(match.group(1))
-    byte2 = int(match.group(2)) if match.group(2) else file_size - 1
-    byte2 = min(byte2, file_size - 1)
-    if byte1 > byte2:
+    b1 = int(m.group(1))
+    b2 = int(m.group(2)) if m.group(2) else size - 1
+    b2 = min(b2, size - 1)
+    if b1 > b2:
         abort(416)
 
-    length = byte2 - byte1 + 1
+    length = b2 - b1 + 1
+    return Response(
+        _read_chunks(path, b1, length),
+        status=206, mimetype="video/mp4",
+        headers={"Content-Range":  f"bytes {b1}-{b2}/{size}",
+                 "Accept-Ranges":  "bytes",
+                 "Content-Length": str(length),
+                 "Cache-Control":  "no-cache"}
+    )
 
-    def partial_stream():
-        with open(path, "rb") as f:
-            f.seek(byte1)
-            remaining = length
-            while remaining > 0:
-                data = f.read(min(1024 * 1024, remaining))
-                if not data:
-                    break
+
+def _read_chunks(path, start=0, length=None):
+    CHUNK = 1024 * 1024  # 1 MB
+    with open(path, "rb") as f:
+        f.seek(start)
+        remaining = length
+        while True:
+            size = CHUNK if remaining is None else min(CHUNK, remaining)
+            data = f.read(size)
+            if not data:
+                break
+            if remaining is not None:
                 remaining -= len(data)
-                yield data
-
-    return Response(partial_stream(), status=206, mimetype="video/mp4",
-                    headers={"Content-Range":  f"bytes {byte1}-{byte2}/{file_size}",
-                             "Accept-Ranges":  "bytes",
-                             "Content-Length": str(length),
-                             "Cache-Control":  "no-cache"})
-
-# ── 🚀 الوكيل السري (Proxy) لتخطي حظر 403 Forbidden ──
-@app.route("/proxy")
-def proxy_download():
-    target_url = request.args.get("url")
-    title = request.args.get("title", "VidFetch_Video")
-    
-    if not target_url:
-        abort(400)
-        
-    # تزييف الهوية لتبدو كمتصفح طبيعي وتخطي حماية تيك توك
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://www.tiktok.com/"
-    }
-    
-    try:
-        # السيرفر هو من يقوم بطلب الرابط وليس متصفح المستخدم (تطابق الـ IP)
-        r = requests.get(target_url, headers=headers, stream=True, timeout=15)
-        r.raise_for_status() # إرسال خطأ إذا واجه السيرفر 403 أو 404
-        
-        def generate():
-            for chunk in r.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    yield chunk
-                    
-        # إرسال الملف بتنسيق تحميل مباشر وبالاسم العربي الصحيح
-        safe_title = urllib.parse.unquote(title) # فك التشفير للاسم
-        encoded_title = urllib.parse.quote(safe_title)
-        
-        return Response(generate(), 
-                        mimetype=r.headers.get('Content-Type', 'video/mp4'),
-                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_title}.mp4"})
-    except Exception as e:
-        print(f"[PROXY ERROR]: {e}")
-        return abort(500)
+            yield data
 
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
-

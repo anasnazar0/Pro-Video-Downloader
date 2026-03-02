@@ -28,7 +28,7 @@ def cleanup_old_files():
         now = time.time()
         for f in os.listdir(DOWNLOAD_FOLDER):
             path = os.path.join(DOWNLOAD_FOLDER, f)
-            if os.path.isfile(path) and now - os.path.getmtime(path) > 1800:
+            if os.path.isfile(path) and now - os.path.getmtime(path) > 7200:
                 os.remove(path)
     except Exception:
         pass
@@ -138,3 +138,4 @@ def stream_video(filename):
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+

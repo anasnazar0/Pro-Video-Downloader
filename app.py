@@ -3,23 +3,27 @@ import uuid
 import time
 from flask import Flask, render_template, request, jsonify, send_file
 import yt_dlp
+import imageio_ffmpeg
 
 app = Flask(__name__)
 
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# Base options for extracting ONLY (No downloading here)
+# 🛠️ Extract the path for the local FFmpeg binary to bypass Render limitations
+FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
+
+# Options for Phase 1: Pure Extraction ONLY (No downloading)
 EXTRACT_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "nocheckcertificate": True,
     "cookiefile": "cookies.txt",
-    "extract_flat": False, 
+    "extract_flat": False,
 }
 
 def cleanup_old_files():
-    """Removes downloaded files older than 30 minutes to free up server space."""
+    """Removes downloaded files older than 30 minutes to save server space."""
     try:
         now = time.time()
         for f in os.listdir(DOWNLOAD_FOLDER):
@@ -63,7 +67,7 @@ def download():
             thumbnail = info.get("thumbnail", thumbnail)
             fallback_url = info.get('url')
             
-            # Find the best quality direct link
+            # Find the best quality pre-merged direct link for the download button
             formats = info.get('formats', [])
             for f in reversed(formats):
                 if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4':
@@ -73,33 +77,26 @@ def download():
             if not best_download_url:
                 best_download_url = fallback_url
     except Exception as e:
-        # If we can't even extract the link, the whole process must stop
         return jsonify({"error": f"Failed to fetch video details: {str(e)}"}), 500
 
 
     # ==========================================
-    # PHASE 2: ATTEMPT LOW QUALITY DOWNLOAD FOR STREAMING
+    # PHASE 2: ATTEMPT SERVER DOWNLOAD FOR STREAMING (POWERED BY FFMPEG)
     # ==========================================
     stream_url = ""
     preview_type = "video"
 
     try:
+        # Options for Phase 2: Downloading and merging with FFmpeg
         stream_opts = dict(EXTRACT_OPTS)
-        
-        # Domain-Based format selection to prevent FFmpeg server crashes
-        if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
-            # Target specific low-quality merged formats for YouTube
-            stream_opts.update({
-                "format": "18/b[height<=480][ext=mp4]",
-                "outtmpl": filepath
-            })
-        else:
-            # Low quality selection for other platforms
-            stream_opts.update({
-                "format": "b[height<=480]/best",
-                "outtmpl": filepath
-            })
+        stream_opts.update({
+            "ffmpeg_location": FFMPEG_PATH, # 🚀 This fixes the hidden format error!
+            "format": "bv*[height<=480]+ba/b[height<=480]/best",
+            "outtmpl": filepath,
+            "merge_output_format": "mp4"
+        })
 
+        # Download the file to the server for fast streaming
         with yt_dlp.YoutubeDL(stream_opts) as ydl_down:
             ydl_down.download([url])
 
@@ -112,10 +109,10 @@ def download():
         if final_file:
             stream_url = f"/stream/{final_file}"
         else:
-            raise Exception("File not found after download attempt.")
+            raise Exception("File merging failed silently.")
 
     except Exception as stream_error:
-        # IF PHASE 2 FAILS: Cancel streaming entirely but DO NOT crash the app.
+        # If Phase 2 still fails (e.g., YouTube blocks the IP), activate the graceful fallback
         preview_type = "error"
         stream_url = ""
         print(f"Streaming phase canceled: {stream_error}")
@@ -127,7 +124,7 @@ def download():
         "title": title,
         "thumbnail": thumbnail,
         "stream_url": stream_url,
-        "preview_type": preview_type, # 'video' or 'error'
+        "preview_type": preview_type,
         "download_url_high": best_download_url,
         "download_url_low": fallback_url
     })

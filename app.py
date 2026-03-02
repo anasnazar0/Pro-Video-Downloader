@@ -1,10 +1,10 @@
 import os, re, uuid, time, subprocess, sys
 import urllib.parse
 import requests
-from flask import Flask, render_template, request, jsonify, Response, abort
+from flask import Flask, render_template, request, jsonify, Response, abort, redirect
 import yt_dlp, imageio_ffmpeg
 
-# ✅ تحديث yt-dlp عند كل بدء تشغيل (إضافة عبقرية منك)
+# ✅ تحديث yt-dlp التلقائي
 try:
     subprocess.run([sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "-q"],
                    check=True, timeout=60)
@@ -17,21 +17,19 @@ DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 
-# ✅ الحل الجذري: إخبار المرحلة الأولى بوجود أداة الدمج، ووضع شبكة صيغ مرنة
-BASE_OPTS = {
+# ✅ PHASE 1 OPTS: خيارات استخراج مرنة جداً (بدون تحديد Format لمنع انهيار يوتيوب)
+EXTRACT_OPTS = {
     "quiet":              True,
     "no_warnings":        True,
     "nocheckcertificate": True,
     "extract_flat":       False,
-    "ffmpeg_location":    FFMPEG_PATH, # <== هذا السطر يمنع انهيار يوتيوب!
-    "format":             "bestvideo+bestaudio/best/bv*+ba/b",
 }
 if os.path.exists("cookies.txt"):
-    BASE_OPTS["cookiefile"] = "cookies.txt"
+    EXTRACT_OPTS["cookiefile"] = "cookies.txt"
 
 
 def get_best_direct_url(info):
-    """أفضل رابط مباشر مدمج (video+audio)."""
+    """جلب أفضل رابط مباشر مدمج"""
     formats = info.get("formats", [])
     for f in reversed(formats):
         if (f.get('vcodec') not in ('none', None)
@@ -80,9 +78,9 @@ def download():
     dl_url    = None
     fb_url    = None
 
-    # ══ PHASE 1: استخراج المعلومات ══
+    # ══ PHASE 1: استخراج المعلومات بحرية تامة ══
     try:
-        with yt_dlp.YoutubeDL(BASE_OPTS) as ydl:
+        with yt_dlp.YoutubeDL(EXTRACT_OPTS) as ydl:
             info      = ydl.extract_info(url, download=False)
             title     = info.get("title", title)
             thumbnail = info.get("thumbnail", thumbnail)
@@ -91,14 +89,16 @@ def download():
     except Exception as e:
         return jsonify({"error": f"فشل استخراج المعلومات: {e}"}), 500
 
-    # ══ PHASE 2: تحميل للبث ══
+    # ══ PHASE 2: تحميل للبث المباشر مع تطبيق صيغ الدمج ══
     stream_url   = ""
     preview_type = "video"
 
     try:
-        opts = dict(BASE_OPTS)
+        opts = dict(EXTRACT_OPTS)
         opts.update({
-            "format":              "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+            "ffmpeg_location":     FFMPEG_PATH,
+            # تطبيق شروط الصيغ فقط أثناء التحميل لتجنب الأخطاء
+            "format":              "bv*[height<=480]+ba/b[height<=480]/b/best",
             "outtmpl":             filepath,
             "merge_output_format": "mp4",
             "retries":             3,
@@ -125,7 +125,7 @@ def download():
         preview_type = "error"
         print(f"[STREAM ERROR] {e}")
 
-    # 🚀 حماية تيك توك 403: تمرير الروابط عبر الوكيل بدلاً من إرسالها للمستخدم مباشرة
+    # تجهيز روابط الوكيل (Proxy)
     safe_title = urllib.parse.quote(title)
     proxy_high = f"/proxy?title={safe_title}&url={urllib.parse.quote(dl_url)}" if dl_url else None
     proxy_low  = f"/proxy?title={safe_title}&url={urllib.parse.quote(fb_url)}" if fb_url else None
@@ -188,7 +188,8 @@ def _chunks(path, start=0, length=None):
                 remaining -= len(data)
             yield data
 
-# ── 🚀 الوكيل السري (Proxy) لتخطي حظر تيك توك 403 Forbidden ──
+
+# ── 🚀 الوكيل السري (Proxy) المحدّث ──
 @app.route("/proxy")
 def proxy_download():
     target_url = request.args.get("url")
@@ -199,11 +200,10 @@ def proxy_download():
         
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://www.tiktok.com/"
     }
     
     try:
-        r = requests.get(target_url, headers=headers, stream=True, timeout=15)
+        r = requests.get(target_url, headers=headers, stream=True, timeout=10)
         r.raise_for_status() 
         
         def generate():
@@ -219,7 +219,8 @@ def proxy_download():
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_title}.mp4"})
     except Exception as e:
         print(f"[PROXY ERROR]: {e}")
-        return abort(500)
+        # ✅ الحل السحري: إذا فشل الوكيل، سيقوم بتوجيه المستخدم للرابط المباشر بدلاً من صفحة 500
+        return redirect(target_url)
 
 
 if __name__ == "__main__":

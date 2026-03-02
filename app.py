@@ -10,17 +10,16 @@ app = Flask(__name__)
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# THE GENIUS FIX: Extract the internal static FFmpeg path provided by imageio_ffmpeg
-# This bypasses Render's lack of FFmpeg installation!
+# Inject local FFmpeg to bypass Render limitations
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 
-# Base options for yt-dlp, now empowered with local FFmpeg
+# Base options for yt-dlp
 YDL_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "nocheckcertificate": True,
     "cookiefile": "cookies.txt",
-    "ffmpeg_location": FFMPEG_PATH,  # Feeding the static FFmpeg binary to yt-dlp
+    "ffmpeg_location": FFMPEG_PATH,
 }
 
 def cleanup_old_files():
@@ -52,12 +51,13 @@ def download():
     filepath = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
 
     try:
-        # Step 1: Extract basic video information and direct High-Q URL if possible
+        # Step 1: Extract basic video metadata and direct High-Q URL
         best_download_url = None
         with yt_dlp.YoutubeDL(YDL_OPTS) as ydl_info:
             info = ydl_info.extract_info(url, download=False)
             title = info.get("title", "Video Ready")
             thumbnail = info.get("thumbnail")
+            video_id = info.get("id")
             
             formats = info.get('formats', [])
             for f in reversed(formats):
@@ -68,9 +68,7 @@ def download():
             if not best_download_url:
                 best_download_url = info.get('url')
 
-        # Step 2: Unified Download Logic for ALL platforms
-        # Now that we have FFmpeg, we can confidently ask for separated video and audio
-        # and merge them into MP4. We limit height to 480p to protect Render's RAM.
+        # Step 2: Attempt standard server download with FFmpeg
         stream_opts = dict(YDL_OPTS)
         stream_opts.update({
             "format": "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
@@ -78,25 +76,43 @@ def download():
             "merge_output_format": "mp4"
         })
 
-        # Execute the actual download and merge
-        with yt_dlp.YoutubeDL(stream_opts) as ydl_down:
-            ydl_down.download([url])
+        preview_type = "video"
+        stream_url = ""
 
-        final_file = None
-        for f in os.listdir(DOWNLOAD_FOLDER):
-            if f.startswith(file_id):
-                final_file = f
-                break
+        try:
+            # 🚀 Primary Attempt: Download and merge on the server
+            with yt_dlp.YoutubeDL(stream_opts) as ydl_down:
+                ydl_down.download([url])
 
-        if not final_file:
-            return jsonify({"error": "Failed to process the video."}), 500
+            final_file = None
+            for f in os.listdir(DOWNLOAD_FOLDER):
+                if f.startswith(file_id):
+                    final_file = f
+                    break
+            
+            if final_file:
+                stream_url = f"/stream/{final_file}"
+            else:
+                raise Exception("File missing after download process.")
 
+        except Exception as internal_error:
+            # 🛡️ THE AUTO-FALLBACK SYSTEM
+            # If server blocks the download/merge, silently switch to Iframe mode for YouTube
+            if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
+                stream_url = f"https://www.youtube.com/embed/{video_id}"
+                preview_type = "iframe"
+            else:
+                # If it's not YouTube, report the error to the user
+                return jsonify({"error": f"Failed to process media: {str(internal_error)}"}), 500
+
+        # Step 3: Return the final robust response
         return jsonify({
             "title": title,
             "thumbnail": thumbnail,
-            "stream_url": f"/stream/{final_file}",
-            "download_url_high": best_download_url if best_download_url else f"/file/{final_file}",
-            "download_url_low": f"/file/{final_file}"
+            "stream_url": stream_url,
+            "preview_type": preview_type,
+            "download_url_high": best_download_url if best_download_url else stream_url,
+            "download_url_low": best_download_url if best_download_url else stream_url
         })
 
     except Exception as e:

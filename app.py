@@ -57,10 +57,14 @@ def download():
         
         # Step 2: Domain-Based Routing to prevent FFmpeg crashes on Render
         if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
-            # YouTube Logic: Target pre-merged formats directly (18=360p, 22=720p)
-            # Avoid using 'merge_output_format' to bypass the need for FFmpeg
+            # YouTube Logic: Maximum resilience format string.
+            # 1. '18/22': Target pre-merged standard MP4s.
+            # 2. 'best[ext=mp4]': Fallback to any pre-merged MP4.
+            # 3. 'best': Fallback to any pre-merged format (e.g., 3gp or webm).
+            # 4. 'bv*': Ultimate fallback to best video only to prevent crashing.
+            # Note: No 'merge_output_format' used here to avoid FFmpeg requirement.
             stream_opts.update({
-                "format": "18/22/b",
+                "format": "18/22/best[ext=mp4]/best/bv*",
                 "outtmpl": filepath
             })
         else:

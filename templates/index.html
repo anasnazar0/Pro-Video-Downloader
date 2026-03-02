@@ -90,7 +90,7 @@
 </div>
 
 <script>
-    async function fetchVideo() {
+   async function fetchVideo() {
         const urlInput = document.getElementById('urlInput').value.trim();
         const btn = document.getElementById('searchBtn');
         const btnText = document.getElementById('btnText');
@@ -98,15 +98,14 @@
         const errorDiv = document.getElementById('error-msg');
 
         if(!urlInput) { 
-            showError("الرجاء إدخال رابط صحيح أولاً."); 
+            showError("Please enter a valid URL first."); 
             return; 
         }
 
-        // Reset UI state
         errorDiv.style.display = "none";
         resultDiv.style.display = "none";
         btn.disabled = true;
-        btnText.innerText = "⏳ جاري سحب وتجهيز الفيديو...";
+        btnText.innerText = "⏳ Processing Video...";
 
         try {
             const response = await fetch('/download', {
@@ -117,50 +116,52 @@
 
             const data = await response.json();
 
+            // Only throw a global error if the entire extraction process failed
             if(!response.ok || data.error) {
-                throw new Error(data.error || "فشل في سحب الفيديو.");
+                throw new Error(data.error || "Failed to fetch video details.");
             }
 
-            // Update UI with video data
             document.getElementById('title').innerText = data.title || 'Video Ready!';
             
             const mediaContainer = document.getElementById('media-container');
             const thumbSrc = data.thumbnail || 'https://img.icons8.com/color/96/000000/video.png';
             
-            // 🛡️ The Smart Display Router
-            if (data.preview_type === 'iframe') {
-                mediaContainer.innerHTML = `
-                    <iframe src="${data.stream_url}" allowfullscreen></iframe>
-                `;
-            } else {
+            // Smart Display Router based on backend success/failure
+            if (data.preview_type === 'video') {
+                // Streaming succeeded
                 mediaContainer.innerHTML = `
                     <video id="vid-player" controls preload="metadata" poster="${thumbSrc}" autoplay>
                         <source src="${data.stream_url}" type="video/mp4">
                     </video>
                 `;
+            } else if (data.preview_type === 'error') {
+                // Streaming failed, but direct download is available
+                mediaContainer.innerHTML = `
+                    <div style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: url('${thumbSrc}') center/cover; position: relative;">
+                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7);"></div>
+                        <div style="position: relative; z-index: 10; color: white; text-align: center; padding: 20px;">
+                            <span style="font-size: 40px; display: block; margin-bottom: 10px;">⚠️</span>
+                            <h3 style="margin: 0; font-size: 18px; color: #fff;">Video preview is unavailable</h3>
+                            <p style="margin: 10px 0 0 0; font-size: 14px; color: #ccc;">However, you can still download the video using the buttons below.</p>
+                        </div>
+                    </div>
+                `;
             }
             
-            // Set download URLs
+            // The download buttons ALWAYS work because they use Phase 1 data
             document.getElementById('btnHigh').href = data.download_url_high;
             document.getElementById('btnLow').href = data.download_url_low;
 
-            // Show results
             resultDiv.style.display = "block";
 
         } catch (err) {
             showError(err.message);
         } finally {
-            // Restore button state
             btn.disabled = false;
-            btnText.innerText = "تحميل وبث الفيديو";
+            btnText.innerText = "Process Video";
         }
-    }
-
-    function showError(msg) {
-        const errorDiv = document.getElementById('error-msg');
-        errorDiv.innerText = "⚠️ " + msg;
-        errorDiv.style.display = "block";
     }
 </script>
 </body>
 </html>
+

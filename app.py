@@ -17,20 +17,24 @@ DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 
-# ✅ PHASE 1 OPTS: خيارات استخراج مرنة جداً (بدون تحديد Format لمنع انهيار يوتيوب)
+# ✅ PHASE 1 OPTS: خيارات مرنة جداً لمنع الانهيار مع يوتيوب Shorts
 EXTRACT_OPTS = {
     "quiet":              True,
     "no_warnings":        True,
     "nocheckcertificate": True,
     "extract_flat":       False,
+    "ignoreerrors":       True, # منع الانهيار إذا كان الفيديو مقيداً
+    "ffmpeg_location":    FFMPEG_PATH,
+    "format":             "bestvideo+bestaudio/best/bv*+ba/b", # سلسلة صيغ تمنع خطأ Requested format
 }
 if os.path.exists("cookies.txt"):
     EXTRACT_OPTS["cookiefile"] = "cookies.txt"
 
 
-def get_best_direct_url(info):
+def get_best_direct_url(formats):
     """جلب أفضل رابط مباشر مدمج"""
-    formats = info.get("formats", [])
+    if not formats:
+        return None
     for f in reversed(formats):
         if (f.get('vcodec') not in ('none', None)
                 and f.get('acodec') not in ('none', None)
@@ -42,7 +46,7 @@ def get_best_direct_url(info):
                 and f.get('acodec') not in ('none', None)
                 and f.get('url')):
             return f['url']
-    return info.get('url')
+    return None
 
 
 def cleanup_old_files():
@@ -78,26 +82,32 @@ def download():
     dl_url    = None
     fb_url    = None
 
-    # ══ PHASE 1: استخراج المعلومات بحرية تامة ══
+    # ══ PHASE 1: استخراج المعلومات بحماية قصوى ══
     try:
         with yt_dlp.YoutubeDL(EXTRACT_OPTS) as ydl:
-            info      = ydl.extract_info(url, download=False)
+            info = ydl.extract_info(url, download=False)
+            
+            if not info:
+                return jsonify({"error": "الفيديو خاص، مقيد عمرياً، أو غير متاح."}), 400
+                
             title     = info.get("title", title)
             thumbnail = info.get("thumbnail", thumbnail)
             fb_url    = info.get("url")
-            dl_url    = get_best_direct_url(info)
+            formats   = info.get("formats", [])
+            
+            dl_url    = get_best_direct_url(formats)
+            if not dl_url:
+                dl_url = fb_url
     except Exception as e:
         return jsonify({"error": f"فشل استخراج المعلومات: {e}"}), 500
 
-    # ══ PHASE 2: تحميل للبث المباشر مع تطبيق صيغ الدمج ══
+    # ══ PHASE 2: تحميل للبث المباشر ══
     stream_url   = ""
     preview_type = "video"
 
     try:
         opts = dict(EXTRACT_OPTS)
         opts.update({
-            "ffmpeg_location":     FFMPEG_PATH,
-            # تطبيق شروط الصيغ فقط أثناء التحميل لتجنب الأخطاء
             "format":              "bv*[height<=480]+ba/b[height<=480]/b/best",
             "outtmpl":             filepath,
             "merge_output_format": "mp4",
@@ -119,13 +129,13 @@ def download():
         if final:
             stream_url = f"/stream/{final}"
         else:
-            raise FileNotFoundError("الملف لم يُوجد.")
+            raise FileNotFoundError("الملف لم يُوجد بعد التحميل.")
 
     except Exception as e:
         preview_type = "error"
         print(f"[STREAM ERROR] {e}")
 
-    # تجهيز روابط الوكيل (Proxy)
+    # تجهيز الروابط (إذا كان تيك توك أو غيره نمرره للوكيل)
     safe_title = urllib.parse.quote(title)
     proxy_high = f"/proxy?title={safe_title}&url={urllib.parse.quote(dl_url)}" if dl_url else None
     proxy_low  = f"/proxy?title={safe_title}&url={urllib.parse.quote(fb_url)}" if fb_url else None
@@ -189,7 +199,7 @@ def _chunks(path, start=0, length=None):
             yield data
 
 
-# ── 🚀 الوكيل السري (Proxy) المحدّث ──
+# ── 🚀 الوكيل السري (Proxy) المحصن ضد الانهيار ──
 @app.route("/proxy")
 def proxy_download():
     target_url = request.args.get("url")
@@ -198,13 +208,16 @@ def proxy_download():
     if not target_url:
         abort(400)
         
+    # تحسين الهوية لتقليل فرصة الحظر من تيك توك
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.tiktok.com/",
+        "Accept": "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5"
     }
     
     try:
         r = requests.get(target_url, headers=headers, stream=True, timeout=10)
-        r.raise_for_status() 
+        r.raise_for_status() # سيطلق خطأ إذا رد تيك توك بـ 403
         
         def generate():
             for chunk in r.iter_content(chunk_size=1024 * 1024):
@@ -218,8 +231,8 @@ def proxy_download():
                         mimetype=r.headers.get('Content-Type', 'video/mp4'),
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_title}.mp4"})
     except Exception as e:
-        print(f"[PROXY ERROR]: {e}")
-        # ✅ الحل السحري: إذا فشل الوكيل، سيقوم بتوجيه المستخدم للرابط المباشر بدلاً من صفحة 500
+        print(f"[PROXY FALLBACK TRIGGERED]: {e}")
+        # ✅ الحل السحري: إذا تم حظر السيرفر، لا تعطي خطأ 500، بل وجه المستخدم للرابط المباشر
         return redirect(target_url)
 
 

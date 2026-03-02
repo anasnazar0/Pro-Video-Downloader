@@ -1,8 +1,10 @@
 import os, re, uuid, time, subprocess, sys
+import urllib.parse
+import requests
 from flask import Flask, render_template, request, jsonify, Response, abort
 import yt_dlp, imageio_ffmpeg
 
-# ✅ تحديث yt-dlp عند كل بدء تشغيل
+# ✅ تحديث yt-dlp عند كل بدء تشغيل (إضافة عبقرية منك)
 try:
     subprocess.run([sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "-q"],
                    check=True, timeout=60)
@@ -15,12 +17,14 @@ DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 
-# ✅ BASE_OPTS — بدون أي format هنا
+# ✅ الحل الجذري: إخبار المرحلة الأولى بوجود أداة الدمج، ووضع شبكة صيغ مرنة
 BASE_OPTS = {
     "quiet":              True,
     "no_warnings":        True,
     "nocheckcertificate": True,
     "extract_flat":       False,
+    "ffmpeg_location":    FFMPEG_PATH, # <== هذا السطر يمنع انهيار يوتيوب!
+    "format":             "bestvideo+bestaudio/best/bv*+ba/b",
 }
 if os.path.exists("cookies.txt"):
     BASE_OPTS["cookiefile"] = "cookies.txt"
@@ -76,7 +80,7 @@ def download():
     dl_url    = None
     fb_url    = None
 
-    # ══ PHASE 1: استخراج فقط — لا format ══
+    # ══ PHASE 1: استخراج المعلومات ══
     try:
         with yt_dlp.YoutubeDL(BASE_OPTS) as ydl:
             info      = ydl.extract_info(url, download=False)
@@ -92,15 +96,14 @@ def download():
     preview_type = "video"
 
     try:
-        opts = {**BASE_OPTS,
-            "ffmpeg_location":     FFMPEG_PATH,
-            # ✅ format مبسّط — يعمل مع YouTube وكل المنصات
+        opts = dict(BASE_OPTS)
+        opts.update({
             "format":              "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
             "outtmpl":             filepath,
             "merge_output_format": "mp4",
             "retries":             3,
             "fragment_retries":    3,
-        }
+        })
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
@@ -122,13 +125,18 @@ def download():
         preview_type = "error"
         print(f"[STREAM ERROR] {e}")
 
+    # 🚀 حماية تيك توك 403: تمرير الروابط عبر الوكيل بدلاً من إرسالها للمستخدم مباشرة
+    safe_title = urllib.parse.quote(title)
+    proxy_high = f"/proxy?title={safe_title}&url={urllib.parse.quote(dl_url)}" if dl_url else None
+    proxy_low  = f"/proxy?title={safe_title}&url={urllib.parse.quote(fb_url)}" if fb_url else None
+
     return jsonify({
         "title":             title,
         "thumbnail":         thumbnail,
         "stream_url":        stream_url,
         "preview_type":      preview_type,
-        "download_url_high": dl_url,
-        "download_url_low":  fb_url,
+        "download_url_high": proxy_high or dl_url,
+        "download_url_low":  proxy_low or fb_url,
     })
 
 
@@ -179,6 +187,39 @@ def _chunks(path, start=0, length=None):
             if remaining is not None:
                 remaining -= len(data)
             yield data
+
+# ── 🚀 الوكيل السري (Proxy) لتخطي حظر تيك توك 403 Forbidden ──
+@app.route("/proxy")
+def proxy_download():
+    target_url = request.args.get("url")
+    title = request.args.get("title", "VidFetch_Video")
+    
+    if not target_url:
+        abort(400)
+        
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.tiktok.com/"
+    }
+    
+    try:
+        r = requests.get(target_url, headers=headers, stream=True, timeout=15)
+        r.raise_for_status() 
+        
+        def generate():
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    yield chunk
+                    
+        safe_title = urllib.parse.unquote(title) 
+        encoded_title = urllib.parse.quote(safe_title)
+        
+        return Response(generate(), 
+                        mimetype=r.headers.get('Content-Type', 'video/mp4'),
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_title}.mp4"})
+    except Exception as e:
+        print(f"[PROXY ERROR]: {e}")
+        return abort(500)
 
 
 if __name__ == "__main__":

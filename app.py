@@ -3,23 +3,18 @@ import uuid
 import time
 from flask import Flask, render_template, request, jsonify, send_file
 import yt_dlp
-import imageio_ffmpeg
 
 app = Flask(__name__)
 
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# Inject local FFmpeg to bypass Render limitations
-FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
-
-# Base options for yt-dlp
-YDL_OPTS = {
+# Base options for extracting information without downloading
+EXTRACT_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "nocheckcertificate": True,
     "cookiefile": "cookies.txt",
-    "ffmpeg_location": FFMPEG_PATH,
 }
 
 def cleanup_old_files():
@@ -51,13 +46,16 @@ def download():
     filepath = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
 
     try:
-        # Step 1: Extract basic video metadata and direct High-Q URL
+        # Phase 1: Metadata and Direct Link Extraction (Failsafe Phase)
+        # This phase only extracts information and does NOT download the video.
         best_download_url = None
-        with yt_dlp.YoutubeDL(YDL_OPTS) as ydl_info:
+        fallback_url = None
+        
+        with yt_dlp.YoutubeDL(EXTRACT_OPTS) as ydl_info:
             info = ydl_info.extract_info(url, download=False)
             title = info.get("title", "Video Ready")
             thumbnail = info.get("thumbnail")
-            video_id = info.get("id")
+            fallback_url = info.get('url')
             
             formats = info.get('formats', [])
             for f in reversed(formats):
@@ -66,21 +64,21 @@ def download():
                     break
             
             if not best_download_url:
-                best_download_url = info.get('url')
+                best_download_url = fallback_url
 
-        # Step 2: Attempt standard server download with FFmpeg
-        stream_opts = dict(YDL_OPTS)
+        # Phase 2: Server Download for Streaming (Isolated Phase)
+        # If this phase fails, the app will NOT crash. It will just skip streaming.
+        stream_opts = dict(EXTRACT_OPTS)
         stream_opts.update({
             "format": "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
             "outtmpl": filepath,
             "merge_output_format": "mp4"
         })
 
-        preview_type = "video"
         stream_url = ""
+        preview_type = "video"
 
         try:
-            # 🚀 Primary Attempt: Download and merge on the server
             with yt_dlp.YoutubeDL(stream_opts) as ydl_down:
                 ydl_down.download([url])
 
@@ -93,30 +91,29 @@ def download():
             if final_file:
                 stream_url = f"/stream/{final_file}"
             else:
-                raise Exception("File missing after download process.")
+                raise Exception("Streaming file was not created.")
 
-        except Exception as internal_error:
-            # 🛡️ THE AUTO-FALLBACK SYSTEM
-            # If server blocks the download/merge, silently switch to Iframe mode for YouTube
-            if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
-                stream_url = f"https://www.youtube.com/embed/{video_id}"
-                preview_type = "iframe"
-            else:
-                # If it's not YouTube, report the error to the user
-                return jsonify({"error": f"Failed to process media: {str(internal_error)}"}), 500
+        except Exception as stream_error:
+            # Silently catch the streaming error (e.g., missing FFmpeg or format unavailable)
+            # The frontend will be instructed to show an error only in the player area.
+            print(f"Streaming preparation failed: {stream_error}")
+            preview_type = "error"
+            stream_url = ""
 
-        # Step 3: Return the final robust response
+        # Phase 3: Return the unified response
+        # Even if streaming failed, download links are guaranteed to be sent.
         return jsonify({
             "title": title,
             "thumbnail": thumbnail,
             "stream_url": stream_url,
             "preview_type": preview_type,
-            "download_url_high": best_download_url if best_download_url else stream_url,
-            "download_url_low": best_download_url if best_download_url else stream_url
+            "download_url_high": best_download_url,
+            "download_url_low": fallback_url
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        # This exception only triggers if Phase 1 (Metadata extraction) fails entirely.
+        return jsonify({"error": f"Failed to extract video information: {str(e)}"}), 500
 
 @app.route("/stream/<filename>")
 def stream_video(filename):
@@ -124,18 +121,6 @@ def stream_video(filename):
     if not os.path.exists(path):
         return "File not found or expired.", 404
     return send_file(path, mimetype="video/mp4", conditional=True)
-
-@app.route("/file/<filename>")
-def download_file(filename):
-    path = os.path.join(DOWNLOAD_FOLDER, filename)
-    if not os.path.exists(path):
-        return "File not found or expired.", 404
-    return send_file(path, as_attachment=True, download_name="Universal_Video.mp4")
-
-@app.route("/version")
-def version():
-    import yt_dlp
-    return {"yt_dlp_version": yt_dlp.version.__version__}
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

@@ -1,7 +1,8 @@
 import os
+import re
 import uuid
 import time
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, Response, abort
 import yt_dlp
 import imageio_ffmpeg
 
@@ -10,20 +11,22 @@ app = Flask(__name__)
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# 🛠️ Extract the path for the local FFmpeg binary to bypass Render limitations
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 
-# Options for Phase 1: Pure Extraction ONLY (No downloading)
 EXTRACT_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "nocheckcertificate": True,
-    "cookiefile": "cookies.txt",
     "extract_flat": False,
 }
 
+# أضف الكوكيز فقط إذا كان الملف موجوداً
+if os.path.exists("cookies.txt"):
+    EXTRACT_OPTS["cookiefile"] = "cookies.txt"
+
+
 def cleanup_old_files():
-    """Removes downloaded files older than 30 minutes to save server space."""
+    """يحذف الملفات القديمة التي مضى عليها أكثر من ساعتين."""
     try:
         now = time.time()
         for f in os.listdir(DOWNLOAD_FOLDER):
@@ -33,9 +36,11 @@ def cleanup_old_files():
     except Exception:
         pass
 
+
 @app.route("/")
 def index():
     return render_template("index.html")
+
 
 @app.route("/download", methods=["POST"])
 def download():
@@ -58,7 +63,7 @@ def download():
     thumbnail = "https://img.icons8.com/color/96/000000/video.png"
 
     # ==========================================
-    # PHASE 1: EXACT EXTRACTION (DIRECT LINK ONLY)
+    # PHASE 1: استخراج المعلومات فقط
     # ==========================================
     try:
         with yt_dlp.YoutubeDL(EXTRACT_OPTS) as ydl_info:
@@ -66,60 +71,67 @@ def download():
             title = info.get("title", title)
             thumbnail = info.get("thumbnail", thumbnail)
             fallback_url = info.get('url')
-            
-            # Find the best quality pre-merged direct link for the download button
+
             formats = info.get('formats', [])
             for f in reversed(formats):
-                if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4':
+                if (f.get('vcodec') != 'none' and
+                        f.get('acodec') != 'none' and
+                        f.get('ext') == 'mp4'):
                     best_download_url = f.get('url')
                     break
-            
+
             if not best_download_url:
                 best_download_url = fallback_url
+
     except Exception as e:
         return jsonify({"error": f"Failed to fetch video details: {str(e)}"}), 500
 
-
     # ==========================================
-    # PHASE 2: ATTEMPT SERVER DOWNLOAD FOR STREAMING (POWERED BY FFMPEG)
+    # PHASE 2: تحميل الفيديو على السيرفر للبث
     # ==========================================
     stream_url = ""
     preview_type = "video"
 
     try:
-        # Options for Phase 2: Downloading and merging with FFmpeg
         stream_opts = dict(EXTRACT_OPTS)
         stream_opts.update({
-            "ffmpeg_location": FFMPEG_PATH, # 🚀 This fixes the hidden format error!
-            "format": "bv*[height<=480]+ba/b[height<=480]/best",
+            "ffmpeg_location": FFMPEG_PATH,
+            "format": "bv*[height<=480][ext=mp4]+ba[ext=m4a]/b[height<=480][ext=mp4]/best[height<=480]/best",
             "outtmpl": filepath,
-            "merge_output_format": "mp4"
+            "merge_output_format": "mp4",
+            "postprocessors": [{
+                "key": "FFmpegVideoConvertor",
+                "preferedformat": "mp4",
+            }],
         })
 
-        # Download the file to the server for fast streaming
         with yt_dlp.YoutubeDL(stream_opts) as ydl_down:
             ydl_down.download([url])
 
+        # البحث عن الملف الذي تم تحميله
         final_file = None
         for f in os.listdir(DOWNLOAD_FOLDER):
-            if f.startswith(file_id):
+            if f.startswith(file_id) and f.endswith(".mp4"):
                 final_file = f
                 break
-        
+
+        # إذا لم يجد .mp4 ابحث عن أي امتداد
+        if not final_file:
+            for f in os.listdir(DOWNLOAD_FOLDER):
+                if f.startswith(file_id):
+                    final_file = f
+                    break
+
         if final_file:
             stream_url = f"/stream/{final_file}"
         else:
-            raise Exception("File merging failed silently.")
+            raise Exception("File not found after download.")
 
     except Exception as stream_error:
-        # If Phase 2 still fails (e.g., YouTube blocks the IP), activate the graceful fallback
         preview_type = "error"
         stream_url = ""
-        print(f"Streaming phase canceled: {stream_error}")
+        print(f"[STREAM ERROR] {stream_error}")
 
-    # ==========================================
-    # PHASE 3: RETURN UNIFIED RESPONSE
-    # ==========================================
     return jsonify({
         "title": title,
         "thumbnail": thumbnail,
@@ -129,13 +141,79 @@ def download():
         "download_url_low": fallback_url
     })
 
+
+# ==========================================
+# ✅ STREAM ENDPOINT - مع دعم Range Requests الكامل
+# ==========================================
 @app.route("/stream/<filename>")
 def stream_video(filename):
+    # تأمين الاسم من أي هجوم Path Traversal
+    filename = os.path.basename(filename)
     path = os.path.join(DOWNLOAD_FOLDER, filename)
+
     if not os.path.exists(path):
-        return "File not found.", 404
-    return send_file(path, mimetype="video/mp4", conditional=True)
+        abort(404)
+
+    file_size = os.path.getsize(path)
+    range_header = request.headers.get("Range")
+
+    # --- بدون Range Header: إرسال الملف كاملاً ---
+    if not range_header:
+        def generate_full():
+            with open(path, "rb") as f:
+                while chunk := f.read(1024 * 1024):  # 1MB chunks
+                    yield chunk
+
+        return Response(
+            generate_full(),
+            status=200,
+            mimetype="video/mp4",
+            headers={
+                "Content-Length": str(file_size),
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "no-cache",
+            }
+        )
+
+    # --- مع Range Header: إرسال جزء محدد (Partial Content 206) ---
+    match = re.search(r"bytes=(\d+)-(\d*)", range_header)
+    if not match:
+        abort(416)  # Range Not Satisfiable
+
+    byte1 = int(match.group(1))
+    byte2 = int(match.group(2)) if match.group(2) else file_size - 1
+
+    # التأكد من أن القيم منطقية
+    byte2 = min(byte2, file_size - 1)
+    if byte1 > byte2:
+        abort(416)
+
+    length = byte2 - byte1 + 1
+
+    def generate_chunk():
+        with open(path, "rb") as f:
+            f.seek(byte1)
+            remaining = length
+            while remaining > 0:
+                chunk_size = min(1024 * 1024, remaining)  # 1MB max chunk
+                data = f.read(chunk_size)
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+    return Response(
+        generate_chunk(),
+        status=206,
+        mimetype="video/mp4",
+        headers={
+            "Content-Range": f"bytes {byte1}-{byte2}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(length),
+            "Cache-Control": "no-cache",
+        }
+    )
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
-

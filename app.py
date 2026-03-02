@@ -5,17 +5,14 @@ from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
-# ==========================================
-# 🛡️ الطبقة الأمنية 1: التحقق من صحة الرابط
-# ==========================================
+# 🛡️ التحقق من صحة الرابط
 def is_valid_url(url):
-    """تتأكد أن المدخل هو رابط إنترنت حقيقي وليس كود اختراق"""
     regex = re.compile(
-        r'^(?:http|ftp)s?://' # يجب أن يبدأ بـ http:// أو https://
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' # النطاق
-        r'localhost|' # أو لوكال هوست
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})' # أو عنوان IP
-        r'(?::\d+)?' # المنفذ (اختياري)
+        r'^(?:http|ftp)s?://'
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|'
+        r'localhost|'
+        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
+        r'(?::\d+)?'
         r'(?:/?|[/?]\S+)$', re.IGNORECASE)
     return re.match(regex, url) is not None
 
@@ -26,73 +23,71 @@ def index():
 @app.route("/download", methods=["POST"])
 def download():
     body = request.get_json()
-    
-    # 1. التحقق من وجود بيانات
     if not body or not body.get("url"):
         return jsonify({"error": "الرجاء إرسال رابط صحيح."}), 400
 
     raw_url = body["url"].strip()
-
-    # 2. الفحص الأمني للرابط
     if not is_valid_url(raw_url):
-        return jsonify({"error": "⚠️ محاولة غير صالحة. الرجاء إدخال رابط إنترنت آمن."}), 400
+        return jsonify({"error": "⚠️ رابط غير صالح."}), 400
 
     # ==========================================
-    # 🚀 الطبقة 2: الاتصال الآمن بـ Cobalt API
+    # 🚀 شبكة خوادم Cobalt (نظام التوفر العالي Failover)
     # ==========================================
-    API_URL = "https://api.cobalt.tools/api/json"
+    COBALT_INSTANCES = [
+        "https://api.cobalt.tools/",           # السيرفر الرسمي
+        "https://cobalt-api.kwiatekmiki.com/", # سيرفر احتياطي 1
+        "https://api.cobalt.lol/",             # سيرفر احتياطي 2
+        "https://cobalt.qas.im/",              # سيرفر احتياطي 3
+        "https://api.zeon.dev/"                # سيرفر احتياطي 4
+    ]
     
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        # تحديد هوية التطبيق لتجنب الحظر من الـ API
-        "User-Agent": "VidFetch-Secure-Server/1.0" 
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
     
     payload = {
-        "url": raw_url,
-        "videoQuality": "max", # طلب أعلى جودة دائماً
-        "filenamePattern": "classic" # اسم ملف نظيف
+        "url": raw_url
     }
 
-    try:
-        # إرسال الطلب مع تحديد وقت أقصى (Timeout) لمنع تعليق السيرفر
-        response = requests.post(API_URL, json=payload, headers=headers, timeout=15)
-        
-        # إذا كان السيرفر الخارجي معطلاً (مثل 500 أو 429)
-        if response.status_code != 200:
-            raise Exception("سيرفرات التحميل تواجه ضغطاً حالياً. يرجى المحاولة بعد قليل.")
+    direct_url = None
+    last_error = "جميع السيرفرات تواجه ضغطاً حالياً. يرجى المحاولة بعد قليل."
 
-        data = response.json()
+    # المرور على السيرفرات واحداً تلو الآخر حتى ينجح أحدهم
+    for api_url in COBALT_INSTANCES:
+        try:
+            # مهلة 8 ثوانٍ لكل سيرفر لكي لا يطول الانتظار
+            response = requests.post(api_url, json=payload, headers=headers, timeout=8)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # إذا السيرفر أرجع خطأ داخلي (مثل فيديو خاص)
+                if data.get("status") == "error":
+                    last_error = data.get("text", "الفيديو غير متاح أو محمي.")
+                    continue # السيرفر رد بخطأ، جرب السيرفر الذي يليه
 
-        # إذا الـ API نفسه أرجع خطأ (مثلاً الرابط خاص أو غير مدعوم)
-        if data.get("status") == "error":
-            error_text = data.get("text", "الفيديو غير متاح أو محمي.")
-            raise Exception(f"الخدمة: {error_text}")
+                # إذا وجدنا الرابط بنجاح!
+                if data.get("url"):
+                    direct_url = data.get("url")
+                    break # نجحنا! نوقف البحث فوراً
+                    
+        except Exception:
+            # إذا كان السيرفر معطلاً تماماً، انتقل للذي بعده بصمت
+            continue 
 
-        # استخراج الرابط النظيف من الـ API
-        direct_url = data.get("url")
+    # إذا فشلت كل السيرفرات الخمسة (احتمال شبه مستحيل)
+    if not direct_url:
+        return jsonify({"error": f"⚠️ {last_error}"}), 500
 
-        # ==========================================
-        # 🛡️ الطبقة الأمنية 3: تعقيم المخرجات
-        # ==========================================
-        if not direct_url or not direct_url.startswith("https://"):
-            raise Exception("تم استلام استجابة غير آمنة من المزود. تم حجب العملية حمايةً لك.")
-
-        # تجهيز البيانات للواجهة الأمامية (متوافقة 100% مع كود الـ HTML الخاص بك)
-        return jsonify({
-            "title": "VidFetch Video (Secure)", 
-            "thumbnail": "https://img.icons8.com/color/96/000000/video.png",
-            "stream_url": direct_url,
-            "preview_type": "video",
-            "download_url_high": direct_url,
-            "download_url_low": direct_url,
-        })
-
-    except requests.exceptions.Timeout:
-        return jsonify({"error": "⚠️ انتهى وقت الاتصال. السيرفرات مشغولة، حاول مجدداً."}), 504
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # تجهيز البيانات للواجهة الأمامية
+    return jsonify({
+        "title": "VidFetch Video", 
+        "thumbnail": "https://img.icons8.com/color/96/000000/video.png",
+        "stream_url": direct_url,
+        "download_url_high": direct_url,
+    })
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

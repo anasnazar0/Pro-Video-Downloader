@@ -3,174 +3,581 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Universal Video Downloader</title>
+    <title>VidFetch — محمّل الفيديو الذكي</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=IBM+Plex+Mono:wght@400;600&family=Noto+Kufi+Arabic:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
-        
-        :root { 
-            --primary: #4F46E5; 
-            --primary-hover: #4338CA; 
-            --bg: #F3F4F6; 
-            --card-bg: #FFFFFF; 
-            --text-main: #1F2937; 
+        :root {
+            --bg:       #0A0A0F;
+            --surface:  #111118;
+            --surface2: #1A1A24;
+            --border:   #2A2A38;
+            --accent:   #7C6AFF;
+            --accent2:  #FF6A9B;
+            --green:    #00E5A0;
+            --text:     #E8E6F0;
+            --muted:    #6B6880;
+            --glow:     rgba(124, 106, 255, 0.35);
         }
-        
-        * { box-sizing: border-box; font-family: 'Tajawal', sans-serif; }
-        body { background: var(--bg); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        
-        .container { width: 100%; max-width: 850px; background: var(--card-bg); padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
-        h1 { color: var(--text-main); text-align: center; margin-bottom: 25px; font-weight: 700; direction: ltr;}
-        
-        .input-group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 25px; }
-        @media (min-width: 480px) { .input-group { flex-direction: row; } } 
-        
-        input { flex: 1; padding: 14px 16px; border: 2px solid #E5E7EB; border-radius: 10px; outline: none; font-size: 16px; transition: 0.3s; direction: ltr; text-align: left;}
-        input:focus { border-color: var(--primary); }
-        
-        button { background: var(--primary); color: white; border: none; padding: 14px 24px; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.3s; min-width: 140px; }
-        button:hover { background: var(--primary-hover); transform: translateY(-2px); }
-        button:disabled { background: #9CA3AF; cursor: not-allowed; transform: none; }
-        
-        #error-msg { display: none; background: #FEE2E2; color: #B91C1C; padding: 12px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-size: 15px; font-weight: bold;}
-        #result { display: none; margin-top: 10px; animation: fadeIn 0.5s ease; }
-        
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        
-        .video-card { display: flex; flex-direction: column; gap: 20px; align-items: center; width: 100%; }
-        
-        .media-container { 
-            width: 100%; max-width: 100%; border-radius: 12px; overflow: hidden; 
-            box-shadow: 0 8px 20px rgba(0,0,0,0.15); background: #000;
-            display: flex; justify-content: center; align-items: center; 
-            aspect-ratio: 16/9; max-height: 500px; position: relative;
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Noto Kufi Arabic', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px 80px;
+            overflow-x: hidden;
         }
-        .media-container video, .media-container img, .media-container iframe { width: 100%; height: 100%; border: none; display: block; object-fit: contain; }
-        
-        .info-container { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 15px; padding-top: 25px; border-top: 2px dashed #E5E7EB; }
-        .info-container h3 { margin: 0; color: var(--text-main); font-size: 18px; line-height: 1.5; word-break: break-word; direction: ltr; text-align: center;}
-        
-        .buttons-container { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 400px; }
-        .dl-btn { text-decoration: none; font-weight: bold; padding: 14px; border-radius: 10px; font-size: 16px; text-align: center; transition: 0.2s; display: block; width: 100%; }
-        
-        .btn-high { background: #10B981; color: white; }
-        .btn-high:hover { background: #059669; transform: scale(1.02); box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);}
-        
-        .btn-low { background: #F3F4F6; color: #374151; border: 2px solid #E5E7EB; }
-        .btn-low:hover { background: #E5E7EB; transform: scale(1.02); }
+
+        /* ── BACKGROUND GRID ── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(124,106,255,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(124,106,255,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ── AMBIENT BLOBS ── */
+        .blob {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(120px);
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.18;
+        }
+        .blob-1 { width: 500px; height: 500px; background: var(--accent); top: -150px; right: -100px; }
+        .blob-2 { width: 400px; height: 400px; background: var(--accent2); bottom: -100px; left: -80px; }
+
+        /* ── WRAPPER ── */
+        .wrapper {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 820px;
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+        }
+
+        /* ── HEADER ── */
+        header {
+            text-align: center;
+            padding-top: 10px;
+        }
+        .logo-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            padding: 6px 16px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 12px;
+            color: var(--accent);
+            letter-spacing: 0.08em;
+            margin-bottom: 22px;
+        }
+        .logo-badge span { width: 7px; height: 7px; background: var(--green); border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.3)} }
+
+        h1 {
+            font-family: 'Syne', sans-serif;
+            font-weight: 800;
+            font-size: clamp(2rem, 6vw, 3.5rem);
+            line-height: 1.1;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #fff 30%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 12px;
+        }
+        .subtitle {
+            color: var(--muted);
+            font-size: 15px;
+            font-family: 'IBM Plex Mono', monospace;
+            letter-spacing: 0.04em;
+        }
+
+        /* ── SEARCH CARD ── */
+        .search-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 28px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            box-shadow: 0 0 60px rgba(124,106,255,0.08);
+        }
+
+        .input-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .url-input-wrap {
+            flex: 1;
+            position: relative;
+        }
+        .url-icon {
+            position: absolute;
+            left: 16px; top: 50%;
+            transform: translateY(-50%);
+            color: var(--muted);
+            font-size: 18px;
+            pointer-events: none;
+        }
+        input[type="text"] {
+            width: 100%;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--text);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 14px;
+            padding: 14px 16px 14px 44px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            direction: ltr;
+        }
+        input[type="text"]::placeholder { color: var(--muted); }
+        input[type="text"]:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(124,106,255,0.15);
+        }
+
+        .go-btn {
+            background: linear-gradient(135deg, var(--accent), #9B5EFF);
+            border: none;
+            border-radius: 12px;
+            color: #fff;
+            font-family: 'Noto Kufi Arabic', sans-serif;
+            font-weight: 700;
+            font-size: 15px;
+            padding: 14px 24px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+            white-space: nowrap;
+            box-shadow: 0 4px 20px var(--glow);
+            min-width: 130px;
+        }
+        .go-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px var(--glow);
+        }
+        .go-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* ── PLATFORMS ── */
+        .platforms {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .platforms-label {
+            font-size: 12px;
+            color: var(--muted);
+            font-family: 'IBM Plex Mono', monospace;
+        }
+        .platform-tag {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 4px 10px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        /* ── ERROR ── */
+        .error-box {
+            display: none;
+            background: rgba(255, 60, 80, 0.08);
+            border: 1px solid rgba(255, 60, 80, 0.3);
+            border-radius: 12px;
+            padding: 14px 18px;
+            color: #FF7A8A;
+            font-size: 14px;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        /* ── PROGRESS ── */
+        .progress-box {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+            padding: 20px 0 8px;
+        }
+        .progress-text {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+            color: var(--accent);
+        }
+        .progress-bar-wrap {
+            width: 100%;
+            height: 3px;
+            background: var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--accent), var(--accent2));
+            border-radius: 10px;
+            animation: indeterminate 1.5s infinite;
+        }
+        @keyframes indeterminate {
+            0%   { width: 0%;   margin-left: 0; }
+            50%  { width: 60%;  margin-left: 20%; }
+            100% { width: 0%;   margin-left: 100%; }
+        }
+
+        /* ── RESULT CARD ── */
+        #result {
+            display: none;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 0 60px rgba(124,106,255,0.08);
+            animation: fadeUp 0.45s ease;
+        }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── VIDEO PLAYER ── */
+        .player-wrap {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            position: relative;
+            overflow: hidden;
+        }
+        .player-wrap video {
+            width: 100%; height: 100%;
+            display: block;
+            object-fit: contain;
+        }
+        /* Error overlay */
+        .player-overlay {
+            position: absolute; inset: 0;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            gap: 12px;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(10px);
+            color: var(--text);
+            text-align: center;
+            padding: 30px;
+        }
+        .overlay-icon { font-size: 48px; }
+        .overlay-title { font-size: 20px; font-weight: 700; }
+        .overlay-sub { font-size: 14px; color: var(--muted); }
+
+        /* ── INFO SECTION ── */
+        .info-section {
+            padding: 24px 28px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .video-title {
+            font-size: 17px;
+            font-weight: 700;
+            line-height: 1.5;
+            color: var(--text);
+            direction: ltr;
+            text-align: left;
+        }
+
+        /* ── DOWNLOAD BUTTONS ── */
+        .dl-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        @media (max-width: 500px) { .dl-buttons { grid-template-columns: 1fr; } }
+
+        .dl-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 13px 16px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 700;
+            font-family: 'Noto Kufi Arabic', sans-serif;
+            text-decoration: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 1px solid transparent;
+        }
+        .dl-btn:hover { transform: translateY(-2px); }
+
+        .btn-hd {
+            background: linear-gradient(135deg, #00C88C, #00E5A0);
+            color: #001A12;
+            box-shadow: 0 4px 18px rgba(0,229,160,0.25);
+        }
+        .btn-hd:hover { box-shadow: 0 8px 28px rgba(0,229,160,0.35); }
+
+        .btn-sd {
+            background: var(--surface2);
+            border-color: var(--border);
+            color: var(--text);
+        }
+        .btn-sd:hover { background: var(--border); }
+
+        /* ── DIVIDER ── */
+        .divider {
+            height: 1px;
+            background: var(--border);
+            margin: 0 -28px;
+        }
+
+        /* ── FOOTER ── */
+        footer {
+            text-align: center;
+            color: var(--muted);
+            font-size: 12px;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        /* ── RESPONSIVE ── */
+        @media (max-width: 600px) {
+            .input-row { flex-direction: column; }
+            .go-btn { width: 100%; }
+            .info-section { padding: 20px; }
+        }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>Universal Video Downloader</h1>
-    
-    <div id="error-msg"></div>
+<div class="blob blob-1"></div>
+<div class="blob blob-2"></div>
 
-    <div class="input-group">
-        <input type="text" id="urlInput" placeholder="ضع الرابط هنا (يوتيوب، تيك توك، انستغرام...)">
-        <button id="searchBtn" onclick="fetchVideo()">
-            <span id="btnText">تحميل وبث الفيديو</span>
-        </button>
+<div class="wrapper">
+
+    <!-- HEADER -->
+    <header>
+        <div class="logo-badge">
+            <span></span>
+            VidFetch v2.0 — Online
+        </div>
+        <h1>محمّل الفيديو الذكي</h1>
+        <p class="subtitle">// Download &amp; Stream from any platform</p>
+    </header>
+
+    <!-- SEARCH CARD -->
+    <div class="search-card">
+        <div class="input-row">
+            <div class="url-input-wrap">
+                <span class="url-icon">🔗</span>
+                <input
+                    type="text"
+                    id="urlInput"
+                    placeholder="https://youtube.com/watch?v=..."
+                    onkeydown="if(event.key==='Enter') fetchVideo()"
+                >
+            </div>
+            <button class="go-btn" id="goBtn" onclick="fetchVideo()">
+                <span id="btnText">⚡ معالجة</span>
+            </button>
+        </div>
+
+        <div class="platforms">
+            <span class="platforms-label">يدعم:</span>
+            <span class="platform-tag">YouTube</span>
+            <span class="platform-tag">TikTok</span>
+            <span class="platform-tag">Instagram</span>
+            <span class="platform-tag">Twitter/X</span>
+            <span class="platform-tag">Facebook</span>
+            <span class="platform-tag">+1000 موقع</span>
+        </div>
+
+        <!-- PROGRESS -->
+        <div class="progress-box" id="progressBox">
+            <div class="progress-text" id="progressText">⏳ جاري استخراج معلومات الفيديو...</div>
+            <div class="progress-bar-wrap"><div class="progress-bar-fill"></div></div>
+        </div>
+
+        <!-- ERROR -->
+        <div class="error-box" id="errorBox"></div>
     </div>
 
+    <!-- RESULT -->
     <div id="result">
-        <div class="video-card">
-            <div id="media-container" class="media-container"></div>
-            
-            <div class="info-container">
-                <h3 id="title"></h3>
-                
-                <div class="buttons-container">
-                    <a id="btnHigh" href="#" class="dl-btn btn-high" target="_blank" rel="noopener noreferrer">⬇️ تحميل بأعلى جودة (مباشر)</a>
-                    <a id="btnLow" href="#" class="dl-btn btn-low">⬇️ تحميل جودة عادية (احتياطي)</a>
-                </div>
+
+        <!-- PLAYER -->
+        <div class="player-wrap" id="playerWrap">
+            <!-- filled by JS -->
+        </div>
+
+        <!-- INFO -->
+        <div class="info-section">
+            <div class="video-title" id="videoTitle"></div>
+            <div class="divider"></div>
+            <div class="dl-buttons">
+                <a id="btnHigh" href="#" class="dl-btn btn-hd" target="_blank" rel="noopener noreferrer">
+                    ⬇️ تحميل جودة عالية
+                </a>
+                <a id="btnLow" href="#" class="dl-btn btn-sd" target="_blank" rel="noopener noreferrer">
+                    ⬇️ تحميل جودة عادية
+                </a>
             </div>
         </div>
+
     </div>
+
+    <footer>VidFetch — built with yt-dlp &amp; Flask • Render Cloud</footer>
+
 </div>
 
 <script>
-   async function fetchVideo() {
-        const urlInput = document.getElementById('urlInput').value.trim();
-        const btn = document.getElementById('searchBtn');
+    const steps = [
+        "⏳ جاري استخراج معلومات الفيديو...",
+        "📡 جاري تحليل الصيغ المتاحة...",
+        "⬇️ جاري تحميل الفيديو على السيرفر...",
+        "🔧 جاري معالجة الفيديو...",
+        "✅ اكتمل التحميل، جاري التهيئة..."
+    ];
+    let stepTimer = null;
+    let stepIndex = 0;
+
+    function startProgress() {
+        stepIndex = 0;
+        document.getElementById('progressText').textContent = steps[0];
+        document.getElementById('progressBox').style.display = 'flex';
+        stepTimer = setInterval(() => {
+            stepIndex = Math.min(stepIndex + 1, steps.length - 1);
+            document.getElementById('progressText').textContent = steps[stepIndex];
+        }, 4000);
+    }
+
+    function stopProgress() {
+        clearInterval(stepTimer);
+        document.getElementById('progressBox').style.display = 'none';
+    }
+
+    function showError(msg) {
+        const box = document.getElementById('errorBox');
+        box.textContent = "⚠️ " + msg;
+        box.style.display = 'block';
+    }
+
+    async function fetchVideo() {
+        const url = document.getElementById('urlInput').value.trim();
+        const btn = document.getElementById('goBtn');
         const btnText = document.getElementById('btnText');
         const resultDiv = document.getElementById('result');
-        const errorDiv = document.getElementById('error-msg');
+        const errorBox = document.getElementById('errorBox');
 
-        if(!urlInput) { 
-            showError("Please enter a valid URL first."); 
-            return; 
-        }
+        if (!url) { showError("الرجاء إدخال رابط صالح."); return; }
 
-        errorDiv.style.display = "none";
-        resultDiv.style.display = "none";
+        // Reset
+        errorBox.style.display = 'none';
+        resultDiv.style.display = 'none';
         btn.disabled = true;
-        btnText.innerText = "⏳ Processing Video...";
+        btnText.textContent = "⏳ معالجة...";
+        startProgress();
 
         try {
-            const response = await fetch('/download', {
+            const res = await fetch('/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: urlInput })
+                body: JSON.stringify({ url })
             });
 
-            // Read raw text to catch potential server crashes
-            const responseText = await response.text();
+            const text = await res.text();
             let data;
-            
-            try {
-                data = JSON.parse(responseText);
-            } catch (parseError) {
-                throw new Error("Server Error. Response: " + responseText.substring(0, 50));
-            }
+            try { data = JSON.parse(text); }
+            catch { throw new Error("خطأ في الخادم: " + text.substring(0, 80)); }
 
-            // If Phase 1 (Extraction) failed entirely
-            if(!response.ok || data.error) {
-                throw new Error(data.error || "Failed to fetch video details.");
-            }
+            if (!res.ok || data.error) throw new Error(data.error || "فشل في جلب الفيديو.");
 
-            // Update UI elements
-            document.getElementById('title').innerText = data.title || 'Video Ready!';
-            const mediaContainer = document.getElementById('media-container');
-            const thumbSrc = data.thumbnail || 'https://img.icons8.com/color/96/000000/video.png';
-            
-            // 🛡️ DECISION ROUTER: Render Video OR Error Message
-            if (data.preview_type === 'error') {
-                // Display the exact message requested by the user
-                mediaContainer.innerHTML = `
-                    <div style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: url('${thumbSrc}') center/cover; position: relative;">
-                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8);"></div>
-                        <div style="position: relative; z-index: 10; color: white; text-align: center; padding: 20px;">
-                            <span style="font-size: 45px; display: block; margin-bottom: 15px;">⚠️</span>
-                            <h3 style="margin: 0; font-size: 22px; color: #fff; font-weight: bold;">لا يوجد عرض</h3>
-                            <p style="margin: 10px 0 0 0; font-size: 16px; color: #E5E7EB;">فقط يوجد رابط تحميل مباشر</p>
-                        </div>
+            stopProgress();
+
+            // ── Populate result ──
+            document.getElementById('videoTitle').textContent = data.title || 'فيديو جاهز';
+            const thumb = data.thumbnail || 'https://img.icons8.com/color/96/000000/video.png';
+            const playerWrap = document.getElementById('playerWrap');
+
+            if (data.preview_type === 'error' || !data.stream_url) {
+                // No stream available — show thumbnail overlay
+                playerWrap.innerHTML = `
+                    <img src="${thumb}" alt="thumbnail" style="width:100%;height:100%;object-fit:cover;filter:blur(6px) brightness(.4);" onerror="this.style.display='none'">
+                    <div class="player-overlay">
+                        <div class="overlay-icon">📥</div>
+                        <div class="overlay-title">العرض المباشر غير متاح</div>
+                        <div class="overlay-sub">استخدم رابط التحميل أدناه</div>
                     </div>
                 `;
             } else {
-                // Stream is ready and downloaded successfully
-                mediaContainer.innerHTML = `
-                    <video id="vid-player" controls preload="metadata" poster="${thumbSrc}" autoplay>
+                // Stream ready
+                playerWrap.innerHTML = `
+                    <video
+                        id="vid-player"
+                        controls
+                        autoplay
+                        preload="metadata"
+                        poster="${thumb}"
+                        crossorigin="anonymous"
+                    >
                         <source src="${data.stream_url}" type="video/mp4">
+                        متصفحك لا يدعم تشغيل الفيديو.
                     </video>
                 `;
-            }
-            
-            // Apply the direct download links (These work regardless of the stream status)
-            document.getElementById('btnHigh').href = data.download_url_high || '#';
-            document.getElementById('btnLow').href = data.download_url_low || '#';
 
-            resultDiv.style.display = "block";
+                // Handle video load errors gracefully
+                const vid = document.getElementById('vid-player');
+                vid.addEventListener('error', () => {
+                    playerWrap.innerHTML = `
+                        <img src="${thumb}" alt="thumbnail" style="width:100%;height:100%;object-fit:cover;filter:blur(6px) brightness(.4);">
+                        <div class="player-overlay">
+                            <div class="overlay-icon">⚠️</div>
+                            <div class="overlay-title">تعذّر تشغيل الفيديو</div>
+                            <div class="overlay-sub">يمكنك التحميل المباشر من الأزرار أدناه</div>
+                        </div>
+                    `;
+                });
+            }
+
+            // Download links
+            const btnHigh = document.getElementById('btnHigh');
+            const btnLow  = document.getElementById('btnLow');
+            btnHigh.href = data.download_url_high || '#';
+            btnLow.href  = data.download_url_low  || '#';
+
+            if (!data.download_url_high) btnHigh.style.display = 'none';
+            if (!data.download_url_low)  btnLow.style.display  = 'none';
+
+            resultDiv.style.display = 'block';
 
         } catch (err) {
+            stopProgress();
             showError(err.message);
         } finally {
             btn.disabled = false;
-            btnText.innerText = "Process Video";
+            btnText.textContent = "⚡ معالجة";
         }
     }
 </script>
 </body>
 </html>
-
-

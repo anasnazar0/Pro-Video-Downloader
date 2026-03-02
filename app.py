@@ -102,3 +102,8 @@ def download_file(filename):
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+@app.route("/version")
+def version():
+    import yt_dlp
+    return {"yt_dlp_version": yt_dlp.version.__version__}
+

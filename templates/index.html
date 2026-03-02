@@ -7,7 +7,14 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
         
-        :root { --primary: #4F46E5; --primary-hover: #4338CA; --bg: #F3F4F6; --card-bg: #FFFFFF; --text-main: #1F2937; }
+        :root { 
+            --primary: #4F46E5; 
+            --primary-hover: #4338CA; 
+            --bg: #F3F4F6; 
+            --card-bg: #FFFFFF; 
+            --text-main: #1F2937; 
+        }
+        
         * { box-sizing: border-box; font-family: 'Tajawal', sans-serif; }
         body { background: var(--bg); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
         
@@ -16,14 +23,17 @@
         
         .input-group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 25px; }
         @media (min-width: 480px) { .input-group { flex-direction: row; } } 
-        input { flex: 1; padding: 14px 16px; border: 2px solid #E5E7EB; border-radius: 10px; outline: none; font-size: 16px; transition: 0.3s; }
+        
+        input { flex: 1; padding: 14px 16px; border: 2px solid #E5E7EB; border-radius: 10px; outline: none; font-size: 16px; transition: 0.3s; direction: ltr; text-align: left;}
         input:focus { border-color: var(--primary); }
+        
         button { background: var(--primary); color: white; border: none; padding: 14px 24px; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.3s; min-width: 140px; }
         button:hover { background: var(--primary-hover); transform: translateY(-2px); }
         button:disabled { background: #9CA3AF; cursor: not-allowed; transform: none; }
         
         #error-msg { display: none; background: #FEE2E2; color: #B91C1C; padding: 12px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-size: 15px; font-weight: bold;}
         #result { display: none; margin-top: 10px; animation: fadeIn 0.5s ease; }
+        
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
         .video-card { display: flex; flex-direction: column; gap: 20px; align-items: center; width: 100%; }
@@ -34,12 +44,11 @@
             display: flex; justify-content: center; align-items: center; 
             aspect-ratio: 16/9; max-height: 500px; position: relative;
         }
-        .media-container video, .media-container img { width: 100%; height: 100%; border: none; display: block; object-fit: contain; }
+        .media-container video, .media-container img, .media-container iframe { width: 100%; height: 100%; border: none; display: block; object-fit: contain; }
         
         .info-container { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 15px; padding-top: 25px; border-top: 2px dashed #E5E7EB; }
         .info-container h3 { margin: 0; color: var(--text-main); font-size: 18px; line-height: 1.5; word-break: break-word; direction: ltr; text-align: center;}
         
-        /* تنسيق أزرار التحميل الجديدة */
         .buttons-container { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 400px; }
         .dl-btn { text-decoration: none; font-weight: bold; padding: 14px; border-radius: 10px; font-size: 16px; text-align: center; transition: 0.2s; display: block; width: 100%; }
         
@@ -82,51 +91,66 @@
 
 <script>
     async function fetchVideo() {
-        const url = document.getElementById('urlInput').value.trim();
+        const urlInput = document.getElementById('urlInput').value.trim();
         const btn = document.getElementById('searchBtn');
         const btnText = document.getElementById('btnText');
         const resultDiv = document.getElementById('result');
         const errorDiv = document.getElementById('error-msg');
 
-        if(!url) { showError("الرجاء إدخال رابط صحيح أولاً."); return; }
+        if(!urlInput) { 
+            showError("الرجاء إدخال رابط صحيح أولاً."); 
+            return; 
+        }
 
+        // Reset UI state
         errorDiv.style.display = "none";
         resultDiv.style.display = "none";
         btn.disabled = true;
-        
         btnText.innerText = "⏳ جاري سحب وتجهيز الفيديو...";
 
         try {
             const response = await fetch('/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: url })
+                body: JSON.stringify({ url: urlInput })
             });
 
             const data = await response.json();
 
-            if(!response.ok || data.error) throw new Error(data.error || "فشل في سحب الفيديو.");
+            if(!response.ok || data.error) {
+                throw new Error(data.error || "فشل في سحب الفيديو.");
+            }
 
+            // Update UI with video data
             document.getElementById('title').innerText = data.title || 'Video Ready!';
             
             const mediaContainer = document.getElementById('media-container');
             const thumbSrc = data.thumbnail || 'https://img.icons8.com/color/96/000000/video.png';
             
-            // تشغيل البث الخفيف (480p) من سيرفرك
-            mediaContainer.innerHTML = `
-                <video id="vid-player" controls preload="metadata" poster="${thumbSrc}" autoplay>
-                    <source src="${data.stream_url}" type="video/mp4">
-                </video>
-            `;
+            // 🛡️ The Smart Display Router
+            if (data.preview_type === 'iframe') {
+                mediaContainer.innerHTML = `
+                    <iframe src="${data.stream_url}" allowfullscreen></iframe>
+                `;
+            } else {
+                mediaContainer.innerHTML = `
+                    <video id="vid-player" controls preload="metadata" poster="${thumbSrc}" autoplay>
+                        <source src="${data.stream_url}" type="video/mp4">
+                    </video>
+                `;
+            }
             
-            // تعيين روابط التحميل للأزرار
+            // Set download URLs
             document.getElementById('btnHigh').href = data.download_url_high;
             document.getElementById('btnLow').href = data.download_url_low;
 
+            // Show results
             resultDiv.style.display = "block";
+
         } catch (err) {
             showError(err.message);
         } finally {
+            // Restore button state
             btn.disabled = false;
             btnText.innerText = "تحميل وبث الفيديو";
         }

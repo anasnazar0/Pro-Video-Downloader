@@ -16,19 +16,17 @@ os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 
 # ✅ تم التحديث: إضافة خيارات مرنة ومسار FFmpeg لمنع الانهيار مع يوتيوب
+# ✅ خيارات الاستخراج: بدون تحديد صيغة لكي لا ينهار يوتيوب عند قراءة القائمة
 EXTRACT_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "nocheckcertificate": True,
     "extract_flat": False,
-    "ffmpeg_location": FFMPEG_PATH, # مهم للتحقق من الصيغ
-    "format": "bestvideo+bestaudio/best/bv*+ba/b", # سلسلة صيغ مضادة للانهيار
-    "ignoreerrors": True, # منع التوقف عند الأخطاء الطفيفة
+    "ignoreerrors": True, # تخطي الأخطاء الطفيفة وعدم الانهيار
 }
 
 if os.path.exists("cookies.txt"):
     EXTRACT_OPTS["cookiefile"] = "cookies.txt"
-
 
 def get_best_download_url(formats):
     """يجلب أفضل رابط مباشر (فيديو + صوت مدمجان)."""
@@ -250,3 +248,4 @@ def proxy_download():
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+

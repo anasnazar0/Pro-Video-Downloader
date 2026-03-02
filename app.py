@@ -5,89 +5,99 @@ from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
-# 🛡️ التحقق من صحة الرابط
-def is_valid_url(url):
-    regex = re.compile(
-        r'^(?:http|ftp)s?://'
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|'
-        r'localhost|'
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
-        r'(?::\d+)?'
-        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-    return re.match(regex, url) is not None
+# ==========================================
+# 🔑 إعدادات السيرفر التجاري (RapidAPI)
+# ==========================================
+# ⚠️ ضع مفتاحك السري هنا بين علامتي التنصيص
+RAPIDAPI_KEY = "d125b5130fmsha9cd16bd72f1fc4 Ibicce•snde077a9fb92f" 
+RAPIDAPI_HOST = "social-media-video-downloader.p.rapidapi.com"
+API_URL = "https://social-media-video-downloader.p.rapidapi.com/youtube/video_details"
+
+
+def get_yt_video_id(url):
+    """دالة لاستخراج المعرف (ID) من أي رابط يوتيوب"""
+    regex = r'(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})'
+    match = re.search(regex, url)
+    return match.group(1) if match else None
+
 
 @app.route("/")
 def index():
     return render_template("index.html")
 
+
 @app.route("/download", methods=["POST"])
 def download():
     body = request.get_json()
+    
     if not body or not body.get("url"):
         return jsonify({"error": "الرجاء إرسال رابط صحيح."}), 400
 
     raw_url = body["url"].strip()
-    if not is_valid_url(raw_url):
-        return jsonify({"error": "⚠️ رابط غير صالح."}), 400
-
-    # ==========================================
-    # 🚀 شبكة خوادم Cobalt (نظام التوفر العالي Failover)
-    # ==========================================
-    COBALT_INSTANCES = [
-        "https://api.cobalt.tools/",           # السيرفر الرسمي
-        "https://cobalt-api.kwiatekmiki.com/", # سيرفر احتياطي 1
-        "https://api.cobalt.lol/",             # سيرفر احتياطي 2
-        "https://cobalt.qas.im/",              # سيرفر احتياطي 3
-        "https://api.zeon.dev/"                # سيرفر احتياطي 4
-    ]
+    video_id = get_yt_video_id(raw_url)
     
+    if not video_id:
+        return jsonify({"error": "⚠️ عذراً، هذا لا يبدو كرابط يوتيوب صالح."}), 400
+
+    # إعدادات الطلب للـ API
+    querystring = {
+        "videoId": video_id,
+        "renderableFormats": "720p,highres",
+        "urlAccess": "proxied" # بروكسي لتخطي الحظر
+    }
+
     headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    }
-    
-    payload = {
-        "url": raw_url
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": RAPIDAPI_HOST
     }
 
-    direct_url = None
-    last_error = "جميع السيرفرات تواجه ضغطاً حالياً. يرجى المحاولة بعد قليل."
+    try:
+        # إرسال الطلب
+        response = requests.get(API_URL, headers=headers, params=querystring, timeout=15)
+        
+        if response.status_code != 200:
+            return jsonify({"error": f"خطأ من مزود الخدمة: {response.status_code}"}), 500
 
-    # المرور على السيرفرات واحداً تلو الآخر حتى ينجح أحدهم
-    for api_url in COBALT_INSTANCES:
-        try:
-            # مهلة 8 ثوانٍ لكل سيرفر لكي لا يطول الانتظار
-            response = requests.post(api_url, json=payload, headers=headers, timeout=8)
+        data = response.json()
+
+        # ==========================================
+        # 🔍 قراءة الـ JSON واستخراج الرابط
+        # ==========================================
+        contents = data.get("contents", [])
+        if not contents:
+            raise Exception("لم يتم العثور على محتوى للفيديو.")
             
-            if response.status_code == 200:
-                data = response.json()
+        videos = contents[0].get("videos", [])
+        direct_url = None
+        
+        # البحث عن أفضل جودة بصيغة mp4
+        for vid in videos:
+            mime = vid.get("metadata", {}).get("mime_type", "")
+            if "mp4" in mime:
+                direct_url = vid.get("url")
+                break # نأخذ أول وأعلى جودة نجدها
                 
-                # إذا السيرفر أرجع خطأ داخلي (مثل فيديو خاص)
-                if data.get("status") == "error":
-                    last_error = data.get("text", "الفيديو غير متاح أو محمي.")
-                    continue # السيرفر رد بخطأ، جرب السيرفر الذي يليه
+        # إذا لم يجد mp4 تحديداً، يأخذ أي فيديو متوفر
+        if not direct_url and videos:
+            direct_url = videos[0].get("url")
 
-                # إذا وجدنا الرابط بنجاح!
-                if data.get("url"):
-                    direct_url = data.get("url")
-                    break # نجحنا! نوقف البحث فوراً
-                    
-        except Exception:
-            # إذا كان السيرفر معطلاً تماماً، انتقل للذي بعده بصمت
-            continue 
+        if not direct_url:
+            raise Exception("تعذر جلب الرابط المباشر من مزود الخدمة.")
 
-    # إذا فشلت كل السيرفرات الخمسة (احتمال شبه مستحيل)
-    if not direct_url:
-        return jsonify({"error": f"⚠️ {last_error}"}), 500
+        # استخراج صورة مصغرة أنيقة
+        thumbnail_url = f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
 
-    # تجهيز البيانات للواجهة الأمامية
-    return jsonify({
-        "title": "VidFetch Video", 
-        "thumbnail": "https://img.icons8.com/color/96/000000/video.png",
-        "stream_url": direct_url,
-        "download_url_high": direct_url,
-    })
+        return jsonify({
+            "title": "VidFetch Premium Video", 
+            "thumbnail": thumbnail_url,
+            "stream_url": direct_url,
+            "download_url_high": direct_url,
+        })
+
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "⚠️ انتهى وقت الاتصال بمزود الخدمة."}), 504
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

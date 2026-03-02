@@ -2,4 +2,8 @@ Flask
 requests
 gunicorn
 yt-dlp
+Flask==3.0.3
+yt-dlp>=2024.03.10
+imageio-ffmpeg==0.4.9
+
 

@@ -114,43 +114,51 @@
                 body: JSON.stringify({ url: urlInput })
             });
 
-            const data = await response.json();
+            // Read raw text to catch potential server crashes
+            const responseText = await response.text();
+            let data;
+            
+            try {
+                data = JSON.parse(responseText);
+            } catch (parseError) {
+                throw new Error("Server Error. Response: " + responseText.substring(0, 50));
+            }
 
-            // Only throw a global error if the entire extraction process failed
+            // If Phase 1 (Extraction) failed entirely
             if(!response.ok || data.error) {
                 throw new Error(data.error || "Failed to fetch video details.");
             }
 
+            // Update UI elements
             document.getElementById('title').innerText = data.title || 'Video Ready!';
-            
             const mediaContainer = document.getElementById('media-container');
             const thumbSrc = data.thumbnail || 'https://img.icons8.com/color/96/000000/video.png';
             
-            // Smart Display Router based on backend success/failure
-            if (data.preview_type === 'video') {
-                // Streaming succeeded
+            // 🛡️ DECISION ROUTER: Render Video OR Error Message
+            if (data.preview_type === 'error') {
+                // Display the exact message requested by the user
+                mediaContainer.innerHTML = `
+                    <div style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: url('${thumbSrc}') center/cover; position: relative;">
+                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8);"></div>
+                        <div style="position: relative; z-index: 10; color: white; text-align: center; padding: 20px;">
+                            <span style="font-size: 45px; display: block; margin-bottom: 15px;">⚠️</span>
+                            <h3 style="margin: 0; font-size: 22px; color: #fff; font-weight: bold;">لا يوجد عرض</h3>
+                            <p style="margin: 10px 0 0 0; font-size: 16px; color: #E5E7EB;">فقط يوجد رابط تحميل مباشر</p>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Stream is ready and downloaded successfully
                 mediaContainer.innerHTML = `
                     <video id="vid-player" controls preload="metadata" poster="${thumbSrc}" autoplay>
                         <source src="${data.stream_url}" type="video/mp4">
                     </video>
                 `;
-            } else if (data.preview_type === 'error') {
-                // Streaming failed, but direct download is available
-                mediaContainer.innerHTML = `
-                    <div style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: url('${thumbSrc}') center/cover; position: relative;">
-                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7);"></div>
-                        <div style="position: relative; z-index: 10; color: white; text-align: center; padding: 20px;">
-                            <span style="font-size: 40px; display: block; margin-bottom: 10px;">⚠️</span>
-                            <h3 style="margin: 0; font-size: 18px; color: #fff;">Video preview is unavailable</h3>
-                            <p style="margin: 10px 0 0 0; font-size: 14px; color: #ccc;">However, you can still download the video using the buttons below.</p>
-                        </div>
-                    </div>
-                `;
             }
             
-            // The download buttons ALWAYS work because they use Phase 1 data
-            document.getElementById('btnHigh').href = data.download_url_high;
-            document.getElementById('btnLow').href = data.download_url_low;
+            // Apply the direct download links (These work regardless of the stream status)
+            document.getElementById('btnHigh').href = data.download_url_high || '#';
+            document.getElementById('btnLow').href = data.download_url_low || '#';
 
             resultDiv.style.display = "block";
 
@@ -164,4 +172,5 @@
 </script>
 </body>
 </html>
+
 

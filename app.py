@@ -3,18 +3,24 @@ import uuid
 import time
 from flask import Flask, render_template, request, jsonify, send_file
 import yt_dlp
+import imageio_ffmpeg
 
 app = Flask(__name__)
 
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# Base options for yt-dlp to ensure smooth extraction
+# THE GENIUS FIX: Extract the internal static FFmpeg path provided by imageio_ffmpeg
+# This bypasses Render's lack of FFmpeg installation!
+FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
+
+# Base options for yt-dlp, now empowered with local FFmpeg
 YDL_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "nocheckcertificate": True,
     "cookiefile": "cookies.txt",
+    "ffmpeg_location": FFMPEG_PATH,  # Feeding the static FFmpeg binary to yt-dlp
 }
 
 def cleanup_old_files():
@@ -34,7 +40,6 @@ def index():
 
 @app.route("/download", methods=["POST"])
 def download():
-    # Trigger cleanup process on every new download request
     cleanup_old_files()
 
     data = request.get_json()
@@ -47,39 +52,36 @@ def download():
     filepath = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
 
     try:
-        # Step 1: Extract basic video information
+        # Step 1: Extract basic video information and direct High-Q URL if possible
+        best_download_url = None
         with yt_dlp.YoutubeDL(YDL_OPTS) as ydl_info:
             info = ydl_info.extract_info(url, download=False)
             title = info.get("title", "Video Ready")
             thumbnail = info.get("thumbnail")
+            
+            formats = info.get('formats', [])
+            for f in reversed(formats):
+                if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4':
+                    best_download_url = f.get('url')
+                    break
+            
+            if not best_download_url:
+                best_download_url = info.get('url')
 
+        # Step 2: Unified Download Logic for ALL platforms
+        # Now that we have FFmpeg, we can confidently ask for separated video and audio
+        # and merge them into MP4. We limit height to 480p to protect Render's RAM.
         stream_opts = dict(YDL_OPTS)
-        
-        # Step 2: Domain-Based Routing to prevent FFmpeg crashes on Render
-        if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
-            # YouTube Logic: Maximum resilience format string.
-            # 1. '18/22': Target pre-merged standard MP4s.
-            # 2. 'best[ext=mp4]': Fallback to any pre-merged MP4.
-            # 3. 'best': Fallback to any pre-merged format (e.g., 3gp or webm).
-            # 4. 'bv*': Ultimate fallback to best video only to prevent crashing.
-            # Note: No 'merge_output_format' used here to avoid FFmpeg requirement.
-            stream_opts.update({
-                "format": "18/22/best[ext=mp4]/best/bv*",
-                "outtmpl": filepath
-            })
-        else:
-            # Universal Logic: Flexible fetching for TikTok, Facebook, etc.
-            stream_opts.update({
-                "format": "bv*[height<=480]+ba/b[height<=480]/best",
-                "outtmpl": filepath,
-                "merge_output_format": "mp4"
-            })
+        stream_opts.update({
+            "format": "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+            "outtmpl": filepath,
+            "merge_output_format": "mp4"
+        })
 
-        # Execute the actual download
+        # Execute the actual download and merge
         with yt_dlp.YoutubeDL(stream_opts) as ydl_down:
             ydl_down.download([url])
 
-        # Locate the downloaded file in the folder
         final_file = None
         for f in os.listdir(DOWNLOAD_FOLDER):
             if f.startswith(file_id):
@@ -89,12 +91,11 @@ def download():
         if not final_file:
             return jsonify({"error": "Failed to process the video."}), 500
 
-        # Return the response to the frontend
         return jsonify({
             "title": title,
             "thumbnail": thumbnail,
             "stream_url": f"/stream/{final_file}",
-            "download_url_high": f"/file/{final_file}",
+            "download_url_high": best_download_url if best_download_url else f"/file/{final_file}",
             "download_url_low": f"/file/{final_file}"
         })
 
@@ -106,7 +107,6 @@ def stream_video(filename):
     path = os.path.join(DOWNLOAD_FOLDER, filename)
     if not os.path.exists(path):
         return "File not found or expired.", 404
-    # 'conditional=True' allows proper video streaming and seeking
     return send_file(path, mimetype="video/mp4", conditional=True)
 
 @app.route("/file/<filename>")
@@ -118,7 +118,6 @@ def download_file(filename):
 
 @app.route("/version")
 def version():
-    """Route to easily check the current installed version of yt-dlp."""
     import yt_dlp
     return {"yt_dlp_version": yt_dlp.version.__version__}
 

@@ -64,17 +64,17 @@ def build_opts(url, filepath=None):
     opts = dict(BASE_OPTS)
     opts["http_headers"] = dict(BASE_OPTS["http_headers"])
 
-    # ── YouTube: تجاوز PO Token ──
+    # ── YouTube: تجاوز قيود السيرفر ──
     if is_youtube(url):
         opts["extractor_args"] = {
             "youtube": {
-                # mediaconnect = الأحدث، لا يحتاج PO Token على السيرفرات
-                "player_client": ["mediaconnect", "tv_embedded", "ios", "android", "mweb"],
+                "player_client": ["mediaconnect", "tv_embedded", "ios",
+                                   "android", "android_vr", "mweb", "web"],
+                "player_skip":   ["configs"],
             }
         }
-        opts["geo_bypass"]             = True
-        opts["allow_unplayable_formats"] = False
-        opts["compat_opts"]             = {"no-youtube-unavailable-videos"}
+        opts["geo_bypass"]  = True
+        opts["no_warnings"] = False  # نريد الأخطاء الكاملة
 
     # ── TikTok / Instagram ──
     elif is_tiktok(url):
@@ -82,17 +82,17 @@ def build_opts(url, filepath=None):
     elif is_instagram(url):
         opts["http_headers"]["Referer"] = "https://www.instagram.com/"
 
-    # ── عند الاستخراج فقط: حدد format بسيط يقلل الأخطاء ──
+    # ── عند الاستخراج فقط: بدون format restriction لزيادة التوافق ──
     if not filepath and is_youtube(url):
-        opts["format"] = "best[height<=480]/best"
+        pass  # yt-dlp يختار تلقائياً
 
     # ── إذا طُلب التحميل أضف إعدادات format ──
     if filepath:
         if is_tiktok(url) or is_instagram(url):
             fmt = "best[ext=mp4]/best"
         elif is_youtube(url):
-            # ✅ format بسيط يعمل مع جميع clients
-            fmt = "best[height<=480]/best"
+            # بدون قيود صارمة — yt-dlp يختار أفضل صيغة متاحة
+            fmt = "bestvideo*+bestaudio/best"
         else:
             fmt = (
                 "bestvideo[height<=480]+bestaudio"
@@ -208,8 +208,19 @@ def download():
         if "unavailable" in msg.lower():
             return jsonify({"error": "الفيديو غير متاح أو محذوف."}), 500
         if "Requested format" in msg or "not available" in msg.lower():
-            return jsonify({"error": f"تعذّر استخراج الفيديو — {msg[-200:]}"}), 500
-        return jsonify({"error": f"فشل الاستخراج: {msg[-300:]}"}), 500
+            # YouTube يحجب IP سيرفر Render — يحتاج cookies.txt
+            if is_youtube(url):
+                return jsonify({"error": (
+                    "YouTube يحجب هذا السيرفر. الحل: أضف ملف cookies.txt
+"
+                    "1. ثبّت امتداد Get cookies.txt LOCALLY على Chrome
+"
+                    "2. افتح youtube.com وأنت مسجل دخول
+"
+                    "3. صدّر cookies.txt وضعه في مجلد المشروع على Render"
+                )}), 500
+            return jsonify({"error": f"الصيغة غير متاحة: {msg[-150:]}"}), 500
+        return jsonify({"error": f"فشل الاستخراج: {msg[-200:]}"}), 500
     except Exception as e:
         return jsonify({"error": f"خطأ: {e}"}), 500
 

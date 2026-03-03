@@ -1,42 +1,96 @@
-import os, re, uuid, time, subprocess, sys, json
+import os
+import re
+import uuid
+import time
+import subprocess
+import sys
+import json
+import threading
+import importlib
 import urllib.request
 from flask import Flask, render_template, request, jsonify, Response, abort
-import yt_dlp, imageio_ffmpeg
+import yt_dlp
+import imageio_ffmpeg
 
-# تحديث yt-dlp تلقائياً لضمان تخطي أحدث الحمايات
-try:
-    subprocess.run([sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "-q"],
-                   check=True, timeout=120)
-    print("[INFO] yt-dlp updated.")
-except Exception as e:
-    print(f"[WARN] {e}")
+# ==========================================
+# 1. نظام التحديث التلقائي الذكي (الخلفية)
+# ==========================================
+def update_and_reload_ytdlp():
+    """دالة تقوم بتحديث المكتبة وإعادة تحميلها في الذاكرة الحية"""
+    try:
+        print("[AUTO-UPDATE] Checking for yt-dlp updates...")
+        result = subprocess.run([sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "-q"],
+                                capture_output=True, text=True, timeout=120)
+        
+        # إجبار بايثون على استخدام النسخة الجديدة فوراً دون إطفاء السيرفر
+        importlib.reload(yt_dlp)
+        print("[AUTO-UPDATE] yt-dlp updated and reloaded successfully in memory.")
+    except Exception as e:
+        print(f"[AUTO-UPDATE ERROR] Failed to update: {e}")
 
+def background_updater():
+    """خيط برمجي (Thread) يعمل في الخلفية ويستيقظ كل 12 ساعة"""
+    while True:
+        # الانتظار لمدة 12 ساعة (43200 ثانية)
+        time.sleep(43200)
+        update_and_reload_ytdlp()
+
+# تشغيل التحديث مرة واحدة عند إقلاع السيرفر
+update_and_reload_ytdlp()
+
+# تشغيل المراقب الخفي في الخلفية (daemon=True تعني أنه لن يعيق إطفاء السيرفر)
+updater_thread = threading.Thread(target=background_updater, daemon=True)
+updater_thread.start()
+
+
+# ==========================================
+# 2. إعدادات السيرفر الأساسية
+# ==========================================
 app = Flask(__name__)
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# تحديد مسار أداة الدمج FFMPEG
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
-
-# هوية المتصفح لتخطي الحظر
+COOKIES = "cookies.txt" if os.path.exists("cookies.txt") else None
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
-COOKIES = "cookies.txt" if os.path.exists("cookies.txt") else None
 
-
-# ════════════════════════════════
-#  كشف المنصة
-# ════════════════════════════════
+# ==========================================
+# 3. دوال كشف المنصات وتنظيف الملفات
+# ==========================================
 def is_youtube(url):   return "youtube.com" in url or "youtu.be" in url
 def is_tiktok(url):    return "tiktok.com" in url
 def is_instagram(url): return "instagram.com" in url
 
+def extract_yt_id(url):
+    m = re.search(r"(?:v=|youtu\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})", url)
+    return m.group(1) if m else None
 
-# ════════════════════════════════
-#  بناء الإعدادات (أعلى جودة مطلقة لجميع المنصات)
-# ════════════════════════════════
+def find_file(file_id):
+    for f in os.listdir(DOWNLOAD_FOLDER):
+        if f.startswith(file_id) and f.endswith(".mp4"):
+            return f
+    for f in os.listdir(DOWNLOAD_FOLDER):
+        if f.startswith(file_id):
+            return f
+    return None
+
+def cleanup_old_files():
+    try:
+        now = time.time()
+        for f in os.listdir(DOWNLOAD_FOLDER):
+            p = os.path.join(DOWNLOAD_FOLDER, f)
+            if os.path.isfile(p) and now - os.path.getmtime(p) > 7200:
+                os.remove(p)
+    except Exception:
+        pass
+
+
+# ==========================================
+# 4. بناء الإعدادات لأعلى جودة (بلا حدود)
+# ==========================================
 def build_opts(url, filepath=None):
     opts = {
         "quiet":              True,
@@ -52,7 +106,6 @@ def build_opts(url, filepath=None):
     if COOKIES:
         opts["cookiefile"] = COOKIES
 
-    # ── إعدادات لتخطي حظر المنصات ──
     if is_youtube(url):
         opts["extractor_args"] = {
             "youtube": {
@@ -60,24 +113,27 @@ def build_opts(url, filepath=None):
             }
         }
         opts["geo_bypass"] = True
-
     elif is_tiktok(url):
         opts["http_headers"]["Referer"] = "https://www.tiktok.com/"
-
     elif is_instagram(url):
         opts["http_headers"]["Referer"] = "https://www.instagram.com/"
 
-    # ── إعدادات التحميل والدمج (السر هنا 🚀) ──
     if filepath:
-        # ✅ bestvideo+bestaudio: يجلب أعلى دقة متوفرة (حتى لو 4K أو 8K)
-        # و merge_output_format يجبر FFMPEG على إخراجها كملف MP4 مدعوم
-        fmt = "bestvideo+bestaudio/best"
-
+        fmt = (
+            "bestvideo[vcodec^=avc]+bestaudio[ext=m4a]/"
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo+bestaudio/"
+            "best"
+        )
         opts.update({
             "ffmpeg_location":     FFMPEG_PATH,
             "format":              fmt,
             "outtmpl":             filepath,
             "merge_output_format": "mp4",
+            "postprocessors": [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4',
+            }],
             "retries":             5,
             "fragment_retries":    5,
         })
@@ -85,67 +141,40 @@ def build_opts(url, filepath=None):
     return opts
 
 
-# ════════════════════════════════
-#  مساعدات لتنظيف السيرفر وإيجاد الملف
-# ════════════════════════════════
-def find_file(file_id):
-    """يجد الملف المُحمَّل في المجلد بصيغة mp4."""
-    for f in os.listdir(DOWNLOAD_FOLDER):
-        if f.startswith(file_id) and f.endswith(".mp4"):
-            return f
-    for f in os.listdir(DOWNLOAD_FOLDER):
-        if f.startswith(file_id):
-            return f
-    return None
-
-def cleanup_old_files():
-    """تنظيف الفيديوهات التي مر عليها أكثر من ساعتين"""
-    try:
-        now = time.time()
-        for f in os.listdir(DOWNLOAD_FOLDER):
-            p = os.path.join(DOWNLOAD_FOLDER, f)
-            if os.path.isfile(p) and now - os.path.getmtime(p) > 7200:
-                os.remove(p)
-    except Exception:
-        pass
-
-
-# ════════════════════════════════
-#  ROUTES (المسارات)
-# ════════════════════════════════
+# ==========================================
+# 5. مسارات الواجهة والتحميل (Routes)
+# ==========================================
 @app.route("/")
 def index():
     return render_template("index.html")
 
 @app.route("/download", methods=["POST"])
 def download():
-    cleanup_old_files() # تنظيف السيرفر قبل العملية
-    body = request.get_json()
+    cleanup_old_files()
     
+    body = request.get_json()
     if not body or not body.get("url"):
-        return jsonify({"error": "رابط غير صالح."}), 400
+        return jsonify({"error": "الرجاء إرسال رابط صحيح."}), 400
         
     url = body["url"].strip()
 
-    # إنشاء اسم ملف فريد
     file_id = str(uuid.uuid4())
     fpath   = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
     
-    title     = "Video"
+    title     = "VidFetch Video"
     thumbnail = "https://img.icons8.com/color/96/000000/video.png"
     
     try:
-        # 1. استخراج المعلومات (الاسم والصورة)
+        # المرحلة الأولى: استخراج البيانات الوصفية فقط
         with yt_dlp.YoutubeDL(build_opts(url)) as ydl:
             info      = ydl.extract_info(url, download=False)
             title     = info.get("title", title)
             thumbnail = info.get("thumbnail", thumbnail)
-
     except Exception as e:
         print(f"[Extraction Error] {e}")
         
     try:
-        # 2. تحميل الفيديو من يوتيوب وباقي المنصات ودمجه بأعلى جودة
+        # المرحلة الثانية: التحميل والدمج بأعلى جودة
         with yt_dlp.YoutubeDL(build_opts(url, fpath)) as ydl:
             ydl.download([url])
             
@@ -156,7 +185,7 @@ def download():
         return jsonify({
             "title":             title,
             "thumbnail":         thumbnail,
-            "preview_type":      "video", # يوتيوب وباقي المنصات سيعملون في نفس المشغل
+            "preview_type":      "video",
             "stream_url":        f"/stream/{sf}",
             "download_url_high": f"/stream/{sf}?dl=1",
             "download_url_low":  f"/stream/{sf}?dl=1",
@@ -164,18 +193,20 @@ def download():
         
     except yt_dlp.utils.DownloadError as e:
         msg = str(e)
-        if "403"            in msg: err = "المنصة رفضت الطلب (403)."
-        elif "Private"      in msg: err = "هذا المحتوى خاص."
-        elif "unavailable" in msg.lower(): err = "المحتوى غير متاح."
-        else: err = f"فشل التحميل، تأكد من صحة الرابط."
+        if "403" in msg: 
+            err = "المنصة رفضت الطلب (403 Forbidden)."
+        elif "Private" in msg: 
+            err = "هذا المحتوى خاص ولا يمكن الوصول إليه."
+        elif "unavailable" in msg.lower(): 
+            err = "المحتوى غير متاح أو تم حذفه."
+        else: 
+            err = "فشل التحميل، تأكد من صحة الرابط."
         return jsonify({"error": err}), 500
     except Exception as e:
-        return jsonify({"error": f"حدث خطأ داخلي في السيرفر."}), 500
+        print(f"[Internal Error] {e}")
+        return jsonify({"error": "حدث خطأ داخلي في السيرفر أثناء المعالجة."}), 500
 
 
-# ════════════════════════════════
-#  مسار البث والتحميل للمستخدم
-# ════════════════════════════════
 @app.route("/stream/<filename>")
 def stream_video(filename):
     filename = os.path.basename(filename)
@@ -187,20 +218,18 @@ def stream_video(filename):
 
     size = os.path.getsize(path)
 
-    # حالة التحميل المباشر
     if force_dl:
         return Response(
             _chunks(path), status=200, mimetype="video/mp4",
             headers={
                 "Content-Length":      str(size),
-                "Content-Disposition": 'attachment; filename="VidFetch_HD_Video.mp4"',
+                "Content-Disposition": 'attachment; filename="VidFetch_Video.mp4"',
                 "Cache-Control":       "no-cache",
             }
         )
 
     rng = request.headers.get("Range")
 
-    # بث الفيديو كامل
     if not rng:
         return Response(
             _chunks(path), status=200, mimetype="video/mp4",
@@ -211,7 +240,6 @@ def stream_video(filename):
             }
         )
 
-    # بث الفيديو على أجزاء (Partial Content)
     m = re.search(r"bytes=(\d+)-(\d*)", rng)
     if not m:
         abort(416)
@@ -221,6 +249,7 @@ def stream_video(filename):
     b2 = min(b2, size - 1)
     if b1 > b2:
         abort(416)
+    
     ln = b2 - b1 + 1
 
     return Response(
@@ -234,7 +263,7 @@ def stream_video(filename):
     )
 
 def _chunks(path, start=0, length=None):
-    CHUNK = 1024 * 1024 # 1MB
+    CHUNK = 1024 * 1024
     with open(path, "rb") as f:
         f.seek(start)
         remaining = length

@@ -36,7 +36,7 @@ def extract_yt_id(url):
 
 
 # ════════════════════════════════
-#  بناء الإعدادات
+#  بناء الإعدادات (تم إصلاح خوارزمية الجودة هنا 🚀)
 # ════════════════════════════════
 def build_opts(url, filepath=None):
     """
@@ -72,12 +72,10 @@ def build_opts(url, filepath=None):
     elif is_instagram(url):
         opts["http_headers"]["Referer"] = "https://www.instagram.com/"
 
-    # ── إضافة إعدادات التحميل إذا طُلب ──
+    # ── إضافة إعدادات التحميل بأعلى جودة ممكنة ──
     if filepath:
-        if is_tiktok(url) or is_instagram(url):
-            fmt = "best[ext=mp4]/best"
-        else:
-            fmt = "bestvideo[height<=480]+bestaudio/best[height<=480]/best"
+        # ✅ التعديل الجذري: طلب أفضل فيديو (بصيغة mp4) وأفضل صوت (بصيغة m4a) ليقوم FFMPEG بدمجهم بأعلى جودة
+        fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
 
         opts.update({
             "ffmpeg_location":     FFMPEG_PATH,
@@ -104,7 +102,6 @@ def find_file(file_id):
             return f
     return None
 
-
 def cleanup_old_files():
     try:
         now = time.time()
@@ -122,8 +119,6 @@ def cleanup_old_files():
 @app.route("/")
 def index():
     return render_template("index.html")
-
-
 
 @app.route("/download", methods=["POST"])
 def download():
@@ -165,6 +160,7 @@ def download():
     fpath   = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
     title     = "Video"
     thumbnail = "https://img.icons8.com/color/96/000000/video.png"
+    
     try:
         with yt_dlp.YoutubeDL(build_opts(url)) as ydl:
             info      = ydl.extract_info(url, download=False)
@@ -172,12 +168,16 @@ def download():
             thumbnail = info.get("thumbnail", thumbnail)
     except Exception as e:
         print(f"[Phase1] {e}")
+        
     try:
+        # عملية التحميل بأعلى جودة ودمجها عبر FFMPEG
         with yt_dlp.YoutubeDL(build_opts(url, fpath)) as ydl:
             ydl.download([url])
+            
         sf = find_file(file_id)
         if not sf:
             raise FileNotFoundError("الملف لم يوجد.")
+            
         return jsonify({
             "title":             title,
             "thumbnail":         thumbnail,
@@ -188,8 +188,8 @@ def download():
         })
     except yt_dlp.utils.DownloadError as e:
         msg = str(e)
-        if "403"           in msg: err = "المنصة رفضت الطلب (403)."
-        elif "Private"     in msg: err = "هذا المحتوى خاص."
+        if "403"            in msg: err = "المنصة رفضت الطلب (403)."
+        elif "Private"      in msg: err = "هذا المحتوى خاص."
         elif "unavailable" in msg.lower(): err = "المحتوى غير متاح."
         else: err = f"فشل التحميل: {msg[-120:]}"
         return jsonify({"error": err}), 500
@@ -213,7 +213,7 @@ def stream_video(filename):
             _chunks(path), status=200, mimetype="video/mp4",
             headers={
                 "Content-Length":      str(size),
-                "Content-Disposition": 'attachment; filename="video.mp4"',
+                "Content-Disposition": 'attachment; filename="VidFetch_HQ_Video.mp4"',
                 "Cache-Control":       "no-cache",
             }
         )
@@ -231,7 +231,7 @@ def stream_video(filename):
             }
         )
 
-    # Partial Content
+    # Partial Content (للبث السريع داخل المشغل)
     m = re.search(r"bytes=(\d+)-(\d*)", rng)
     if not m:
         abort(416)
@@ -253,7 +253,6 @@ def stream_video(filename):
         }
     )
 
-
 def _chunks(path, start=0, length=None):
     CHUNK = 1024 * 1024
     with open(path, "rb") as f:
@@ -267,7 +266,6 @@ def _chunks(path, start=0, length=None):
             if remaining is not None:
                 remaining -= len(data)
             yield data
-
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

@@ -7,15 +7,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@400;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #0f172a; --surface: #1e293b; --primary: #6366f1;
-            --primary-hover: #4f46e5; --success: #10b981; --success-hover: #059669;
-            --text: #f8fafc; --text-muted: #94a3b8; --error: #ef4444;
+            --bg: #0f172a; --surface: #1e293b; --primary: #6366f1; --primary-hover: #4f46e5; 
+            --success: #10b981; --success-hover: #059669; --text: #f8fafc; --text-muted: #94a3b8; --error: #ef4444;
         }
-        body {
-            font-family: 'Noto Kufi Arabic', sans-serif; background-color: var(--bg);
-            color: var(--text); margin: 0; padding: 2rem 1rem;
-            display: flex; flex-direction: column; align-items: center; min-height: 100vh;
-        }
+        body { font-family: 'Noto Kufi Arabic', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 2rem 1rem; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
         .container { width: 100%; max-width: 550px; display: flex; flex-direction: column; gap: 1.5rem; }
         .header { text-align: center; margin-bottom: 1rem; }
         .header h1 { margin: 0; font-size: 2.2rem; color: #fff; }
@@ -23,28 +18,25 @@
         .card { background: var(--surface); padding: 1.5rem; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
         .input-group { display: flex; gap: 0.75rem; }
         @media(max-width: 480px){ .input-group { flex-direction: column; } }
-        input {
-            flex: 1; padding: 1rem; border: 1px solid #334155; background: #0f172a;
-            color: #fff; border-radius: 0.5rem; outline: none; font-size: 1rem; direction: ltr;
-        }
+        input { flex: 1; padding: 1rem; border: 1px solid #334155; background: #0f172a; color: #fff; border-radius: 0.5rem; outline: none; font-size: 1rem; direction: ltr; }
         input:focus { border-color: var(--primary); }
-        button.main-btn {
-            padding: 1rem 1.5rem; background: var(--primary); color: white; border: none;
-            border-radius: 0.5rem; font-family: inherit; font-weight: bold; font-size: 1rem;
-            cursor: pointer; transition: background 0.2s; white-space: nowrap;
-        }
+        button.main-btn { padding: 1rem 1.5rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; font-family: inherit; font-weight: bold; font-size: 1rem; cursor: pointer; transition: background 0.2s; white-space: nowrap; }
         button.main-btn:hover:not(:disabled) { background: var(--primary-hover); }
         button.main-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        #loading { display: none; text-align: center; color: var(--text-muted); margin-top: 1rem; font-size: 0.95rem;}
-        #error { display: none; background: rgba(239,68,68,0.1); color: var(--error); padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; font-size: 0.9rem; border: 1px solid rgba(239,68,68,0.3);}
+        
+        /* 👨‍💻 شاشة العمليات (Terminal) */
+        .terminal { display: none; margin-top: 1rem; background: #000; border-radius: 0.5rem; border: 1px solid #334155; overflow: hidden; direction: ltr; text-align: left; }
+        .terminal-header { background: #1e293b; color: #94a3b8; padding: 0.4rem 1rem; font-size: 0.8rem; direction: rtl; text-align: right; border-bottom: 1px solid #334155; font-family: Tahoma, sans-serif;}
+        .terminal-content { padding: 1rem; height: 130px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.4rem; }
+        .log-info { color: #3b82f6; } /* أزرق */
+        .log-warn { color: #f59e0b; } /* أصفر */
+        .log-error { color: #ef4444; } /* أحمر */
+        .log-success { color: #10b981; font-weight: bold; } /* أخضر */
+
         #result { display: none; margin-top: 0.5rem; }
         .video-container { width: 100%; border-radius: 0.5rem; overflow: hidden; background: #000; margin-bottom: 1rem; }
         video { width: 100%; display: block; max-height: 400px; object-fit: contain;}
-        .download-btn {
-            display: block; width: 100%; text-align: center; background: var(--success);
-            color: #fff; padding: 1rem; border-radius: 0.5rem; text-decoration: none;
-            font-weight: bold; font-size: 1.1rem; transition: background 0.2s, transform 0.1s; box-sizing: border-box;
-        }
+        .download-btn { display: block; width: 100%; text-align: center; background: var(--success); color: #fff; padding: 1rem; border-radius: 0.5rem; text-decoration: none; font-weight: bold; font-size: 1.1rem; transition: background 0.2s, transform 0.1s; box-sizing: border-box; }
         .download-btn:hover { background: var(--success-hover); transform: translateY(-2px); }
     </style>
 </head>
@@ -53,7 +45,7 @@
     <div class="container">
         <div class="header">
             <h1>VidFetch</h1>
-            <p>حمّل فيديوهاتك المفضلة من يوتيوب، تيك توك، وغيرها بسرعة البرق</p>
+            <p>حمّل فيديوهاتك المفضلة من يوتيوب، تيك توك بأعلى جودة</p>
         </div>
 
         <div class="card">
@@ -62,15 +54,15 @@
                 <button id="goBtn" class="main-btn" onclick="fetchVideo()">معالجة ⚡</button>
             </div>
             
-            <div id="loading">⏳ جاري جلب الفيديو بأعلى جودة...</div>
-            <div id="error"></div>
+            <div id="terminal" class="terminal">
+                <div class="terminal-header">⚙️ سجل العمليات المباشر (Live Log)</div>
+                <div id="terminalContent" class="terminal-content"></div>
+            </div>
         </div>
 
         <div id="result" class="card">
             <div class="video-container" id="playerWrap"></div>
-            <a id="downloadBtn" href="#" class="download-btn" target="_blank" rel="noopener noreferrer">
-                ⬇️ تحميل الفيديو الآن
-            </a>
+            <a id="downloadBtn" href="#" class="download-btn" target="_blank" rel="noopener noreferrer">⬇️ تحميل الفيديو الآن</a>
         </div>
     </div>
 
@@ -79,90 +71,108 @@
             if (e.key === 'Enter') fetchVideo();
         });
 
+        // دالة لطباعة النصوص داخل شاشة العمليات
+        function log(msg, type = 'info') {
+            const content = document.getElementById('terminalContent');
+            const p = document.createElement('div');
+            p.className = `log-${type}`;
+            p.textContent = `> ${msg}`;
+            content.appendChild(p);
+            content.scrollTop = content.scrollHeight; // التمرير التلقائي للأسفل
+        }
+
+        // دالة لخلط السيرفرات عشوائياً
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
         async function fetchVideo() {
             const url = document.getElementById('urlInput').value.trim();
             const btn = document.getElementById('goBtn');
-            const loading = document.getElementById('loading');
-            const errorBox = document.getElementById('error');
+            const terminal = document.getElementById('terminal');
+            const terminalContent = document.getElementById('terminalContent');
             const resultBox = document.getElementById('result');
             const playerWrap = document.getElementById('playerWrap');
             const downloadBtn = document.getElementById('downloadBtn');
 
-            if (!url) {
-                showError("الرجاء إدخال رابط الفيديو أولاً.");
-                return;
-            }
+            if (!url) { alert("الرجاء إدخال رابط الفيديو أولاً."); return; }
 
-            errorBox.style.display = 'none';
+            // إعادة ضبط الواجهة
             resultBox.style.display = 'none';
+            terminalContent.innerHTML = '';
+            terminal.style.display = 'block';
             btn.disabled = true;
-            loading.style.display = 'block';
 
-            // 🚀 شبكة سيرفرات Cobalt المجانية (التدوير الذكي)
+            log("Starting extraction process...", "info");
+            log("Validating URL...", "info");
+
+            // قائمة السيرفرات
             const instances = [
-                "https://api.cobalt.tools/api/json",           // الرسمي
-                "https://cobalt-api.kwiatekmiki.com/api/json", // احتياطي 1
-                "https://api.cobalt.lol/api/json",             // احتياطي 2
-                "https://cobalt.qas.im/api/json",              // احتياطي 3
-                "https://api.zeon.dev/api/json"                // احتياطي 4
+                "https://co.wuk.sh/api/json",
+                "https://cobalt-api.kwiatekmiki.com/api/json",
+                "https://api.cobalt.lol/api/json",
+                "https://cobalt.qas.im/api/json",
+                "https://api.zeon.dev/api/json",
+                "https://api.cobalt.bepvte.website/api/json",
+                "https://api.cobalt.tools/api/json"
             ];
+            
+            shuffleArray(instances); // خلطها لتوزيع الضغط
+            log(`Loaded ${instances.length} community nodes.`, "info");
 
             let directUrl = null;
-            let lastErrorMsg = "جميع السيرفرات تواجه ضغطاً حالياً. جرب بعد قليل.";
+            let successData = null;
 
-            // الجافاسكريبت في هاتف المستخدم سيجرب السيرفرات واحداً تلو الآخر
-            for (let apiUrl of instances) {
+            // التجربة الحية للسيرفرات واحداً تلو الآخر
+            for (let i = 0; i < instances.length; i++) {
+                const serverUrl = instances[i];
+                const hostname = new URL(serverUrl).hostname;
+                log(`[Attempt ${i+1}/${instances.length}] Routing through: ${hostname}...`, "warn");
+
                 try {
-                    const response = await fetch(apiUrl, {
+                    // نرسل الطلب للباك اند الخاص بك ليقوم هو بالاتصال
+                    const response = await fetch('/download', {
                         method: 'POST',
-                        headers: {
-                            'Accept': 'application/json',
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ 
-                            url: url,
-                            videoQuality: "max",   // أعلى جودة
-                            vCodec: "h264",        // صيغة تدعم جميع الأجهزة
-                            filenamePattern: "classic" 
-                        })
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: url, api_url: serverUrl })
                     });
 
                     const data = await response.json();
 
-                    if (response.ok && data.status !== "error" && data.url) {
-                        directUrl = data.url;
-                        break; // نجحنا! أوقف حلقة البحث
-                    } else if (data.status === "error") {
-                        // إذا كان الرابط نفسه فيه مشكلة (مثلاً فيديو خاص)
-                        lastErrorMsg = data.text || "الفيديو خاص أو الرابط غير مدعوم.";
-                        if(data.text && data.text.includes("supported")) break; // لا تكمل إذا الرابط غير مدعوم
+                    if (response.ok && data.stream_url) {
+                        log(`[Success] Video secured from ${hostname}!`, "success");
+                        log("Preparing media player...", "info");
+                        successData = data;
+                        break; // نجحنا! نوقف البحث
+                    } else {
+                        log(`[Failed] ${hostname} refused the connection or is overloaded.`, "error");
+                        if (data.is_fatal) {
+                            log(`[Fatal Error] ${data.error}`, "error");
+                            break; // إذا كان الفيديو خاص، نوقف البحث تماماً
+                        }
                     }
-                } catch (e) {
-                    console.log("السيرفر مشغول، جاري تجربة سيرفر آخر...", apiUrl);
-                    continue;
+                } catch (err) {
+                    log(`[Timeout] ${hostname} did not respond in time.`, "error");
                 }
             }
 
             btn.disabled = false;
-            loading.style.display = 'none';
 
-            if (directUrl) {
+            if (successData) {
                 // عرض النتيجة
                 playerWrap.innerHTML = `
-                    <video controls playsinline>
-                        <source src="${directUrl}" type="video/mp4">
+                    <video controls playsinline poster="${successData.thumbnail}">
+                        <source src="${successData.stream_url}" type="video/mp4">
                     </video>`;
-                downloadBtn.href = directUrl;
+                downloadBtn.href = successData.download_url_high;
                 resultBox.style.display = 'block';
+                log("Process completed! Ready for download.", "success");
             } else {
-                showError(lastErrorMsg);
+                log("[Process Terminated] All nodes failed. Please try again later.", "error");
             }
-        }
-
-        function showError(msg) {
-            const errorBox = document.getElementById('error');
-            errorBox.textContent = '⚠️ ' + msg;
-            errorBox.style.display = 'block';
         }
     </script>
 </body>

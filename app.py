@@ -64,15 +64,17 @@ def build_opts(url, filepath=None):
     opts = dict(BASE_OPTS)
     opts["http_headers"] = dict(BASE_OPTS["http_headers"])
 
-    # ── YouTube: clients تتجاوز PO Token على سيرفرات cloud ──
+    # ── YouTube: تجاوز PO Token ──
     if is_youtube(url):
         opts["extractor_args"] = {
             "youtube": {
-                # tv_embedded + ios الأفضل على السيرفرات — لا يحتاجان PO Token
-                "player_client": ["tv_embedded", "ios", "android_vr", "android"],
+                # mediaconnect = الأحدث، لا يحتاج PO Token على السيرفرات
+                "player_client": ["mediaconnect", "tv_embedded", "ios", "android", "mweb"],
             }
         }
-        opts["geo_bypass"] = True
+        opts["geo_bypass"]             = True
+        opts["allow_unplayable_formats"] = False
+        opts["compat_opts"]             = {"no-youtube-unavailable-videos"}
 
     # ── TikTok / Instagram ──
     elif is_tiktok(url):
@@ -80,16 +82,17 @@ def build_opts(url, filepath=None):
     elif is_instagram(url):
         opts["http_headers"]["Referer"] = "https://www.instagram.com/"
 
+    # ── عند الاستخراج فقط: حدد format بسيط يقلل الأخطاء ──
+    if not filepath and is_youtube(url):
+        opts["format"] = "best[height<=480]/best"
+
     # ── إذا طُلب التحميل أضف إعدادات format ──
     if filepath:
         if is_tiktok(url) or is_instagram(url):
             fmt = "best[ext=mp4]/best"
         elif is_youtube(url):
-            fmt = (
-                "bestvideo[height<=480]+bestaudio"
-                "/best[height<=480]"
-                "/best"
-            )
+            # ✅ format بسيط يعمل مع جميع clients
+            fmt = "best[height<=480]/best"
         else:
             fmt = (
                 "bestvideo[height<=480]+bestaudio"

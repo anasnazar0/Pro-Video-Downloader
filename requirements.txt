@@ -1,4 +1,4 @@
-Flask==3.0.3
-requests
+flask
+yt-dlp
+imageio-ffmpeg
 gunicorn
-

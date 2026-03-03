@@ -3,7 +3,7 @@ import urllib.request
 from flask import Flask, render_template, request, jsonify, Response, abort
 import yt_dlp, imageio_ffmpeg
 
-# تحديث yt-dlp تلقائياً لضمان تخطي أحدث حمايات المواقع
+# تحديث yt-dlp تلقائياً لضمان تخطي أحدث الحمايات
 try:
     subprocess.run([sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "-q"],
                    check=True, timeout=120)
@@ -15,7 +15,7 @@ app = Flask(__name__)
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# تحديد مسار أداة الدمج FFMPEG التي تم تثبيتها عبر بايثون
+# تحديد مسار أداة الدمج FFMPEG
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 
 # هوية المتصفح لتخطي الحظر
@@ -33,19 +33,11 @@ def is_youtube(url):   return "youtube.com" in url or "youtu.be" in url
 def is_tiktok(url):    return "tiktok.com" in url
 def is_instagram(url): return "instagram.com" in url
 
-def extract_yt_id(url):
-    m = re.search(r"(?:v=|youtu\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})", url)
-    return m.group(1) if m else None
-
 
 # ════════════════════════════════
-#  بناء الإعدادات (أعلى جودة - بلا حدود)
+#  بناء الإعدادات (أعلى جودة مطلقة لجميع المنصات)
 # ════════════════════════════════
 def build_opts(url, filepath=None):
-    """
-    filepath=None  → استخراج معلومات فقط
-    filepath=path  → تحميل الفيديو ودمجه
-    """
     opts = {
         "quiet":              True,
         "no_warnings":        True,
@@ -60,7 +52,7 @@ def build_opts(url, filepath=None):
     if COOKIES:
         opts["cookiefile"] = COOKIES
 
-    # ── إعدادات حسب المنصة ──
+    # ── إعدادات لتخطي حظر المنصات ──
     if is_youtube(url):
         opts["extractor_args"] = {
             "youtube": {
@@ -75,28 +67,29 @@ def build_opts(url, filepath=None):
     elif is_instagram(url):
         opts["http_headers"]["Referer"] = "https://www.instagram.com/"
 
-    # ── إعدادات التحميل والدمج ──
+    # ── إعدادات التحميل والدمج (السر هنا 🚀) ──
     if filepath:
-        # ✅ طلب أفضل جودة فيديو (MP4) وأفضل صوت (M4A) ليتم دمجهما بـ FFMPEG
-        fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+        # ✅ bestvideo+bestaudio: يجلب أعلى دقة متوفرة (حتى لو 4K أو 8K)
+        # و merge_output_format يجبر FFMPEG على إخراجها كملف MP4 مدعوم
+        fmt = "bestvideo+bestaudio/best"
 
         opts.update({
             "ffmpeg_location":     FFMPEG_PATH,
             "format":              fmt,
             "outtmpl":             filepath,
             "merge_output_format": "mp4",
-            "retries":             3,
-            "fragment_retries":    3,
+            "retries":             5,
+            "fragment_retries":    5,
         })
 
     return opts
 
 
 # ════════════════════════════════
-#  مساعدات لتنظيف السيرفر
+#  مساعدات لتنظيف السيرفر وإيجاد الملف
 # ════════════════════════════════
 def find_file(file_id):
-    """يجد الملف المُحمَّل في المجلد."""
+    """يجد الملف المُحمَّل في المجلد بصيغة mp4."""
     for f in os.listdir(DOWNLOAD_FOLDER):
         if f.startswith(file_id) and f.endswith(".mp4"):
             return f
@@ -106,7 +99,7 @@ def find_file(file_id):
     return None
 
 def cleanup_old_files():
-    """تنظيف الفيديوهات التي مر عليها أكثر من ساعتين لتوفير المساحة"""
+    """تنظيف الفيديوهات التي مر عليها أكثر من ساعتين"""
     try:
         now = time.time()
         for f in os.listdir(DOWNLOAD_FOLDER):
@@ -126,59 +119,33 @@ def index():
 
 @app.route("/download", methods=["POST"])
 def download():
-    cleanup_old_files() # تنظيف السيرفر قبل أي عملية جديدة
+    cleanup_old_files() # تنظيف السيرفر قبل العملية
     body = request.get_json()
+    
     if not body or not body.get("url"):
         return jsonify({"error": "رابط غير صالح."}), 400
+        
     url = body["url"].strip()
 
-    # 🎬 حالة يوتيوب: عرض Iframe بدون تحميل للسيرفر
-    if is_youtube(url):
-        vid_id = extract_yt_id(url)
-        if not vid_id:
-            return jsonify({"error": "تعذّر استخراج معرّف الفيديو."}), 400
-        title     = "YouTube Video"
-        thumbnail = f"https://img.youtube.com/vi/{vid_id}/maxresdefault.jpg"
-        try:
-            oembed_url = (f"https://www.youtube.com/oembed"
-                          f"?url=https://www.youtube.com/watch?v={vid_id}&format=json")
-            req = urllib.request.Request(oembed_url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=8) as r:
-                data      = json.loads(r.read())
-                title     = data.get("title", title)
-                thumbnail = data.get("thumbnail_url", thumbnail)
-        except Exception:
-            pass
-        return jsonify({
-            "title":             title,
-            "thumbnail":         thumbnail,
-            "preview_type":      "youtube_embed",
-            "embed_url":         f"https://www.youtube.com/embed/{vid_id}?autoplay=1&rel=0",
-            "stream_url":        "",
-            "download_url_high": f"https://www.youtube.com/watch?v={vid_id}",
-            "download_url_low":  f"https://youtu.be/{vid_id}",
-        })
-
-    # 📱 باقي المنصات: تحميل مباشر للسيرفر ثم بثه بلا قيود
+    # إنشاء اسم ملف فريد
     file_id = str(uuid.uuid4())
     fpath   = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
+    
     title     = "Video"
     thumbnail = "https://img.icons8.com/color/96/000000/video.png"
     
     try:
-        # 1. استخراج المعلومات 
+        # 1. استخراج المعلومات (الاسم والصورة)
         with yt_dlp.YoutubeDL(build_opts(url)) as ydl:
             info      = ydl.extract_info(url, download=False)
             title     = info.get("title", title)
             thumbnail = info.get("thumbnail", thumbnail)
-            
-            # تمت إزالة قيد الـ 10 دقائق هنا بناءً على طلبك 🚀
 
     except Exception as e:
-        print(f"[Phase1 Extraction Error] {e}")
+        print(f"[Extraction Error] {e}")
         
     try:
-        # 2. عملية التحميل الفعلي ودمج الصوت والصورة بأعلى جودة
+        # 2. تحميل الفيديو من يوتيوب وباقي المنصات ودمجه بأعلى جودة
         with yt_dlp.YoutubeDL(build_opts(url, fpath)) as ydl:
             ydl.download([url])
             
@@ -189,20 +156,21 @@ def download():
         return jsonify({
             "title":             title,
             "thumbnail":         thumbnail,
-            "preview_type":      "video",
+            "preview_type":      "video", # يوتيوب وباقي المنصات سيعملون في نفس المشغل
             "stream_url":        f"/stream/{sf}",
             "download_url_high": f"/stream/{sf}?dl=1",
             "download_url_low":  f"/stream/{sf}?dl=1",
         })
+        
     except yt_dlp.utils.DownloadError as e:
         msg = str(e)
         if "403"            in msg: err = "المنصة رفضت الطلب (403)."
         elif "Private"      in msg: err = "هذا المحتوى خاص."
         elif "unavailable" in msg.lower(): err = "المحتوى غير متاح."
-        else: err = f"فشل التحميل، الرابط غير مدعوم أو محمي."
+        else: err = f"فشل التحميل، تأكد من صحة الرابط."
         return jsonify({"error": err}), 500
     except Exception as e:
-        return jsonify({"error": f"حدث خطأ غير متوقع في السيرفر."}), 500
+        return jsonify({"error": f"حدث خطأ داخلي في السيرفر."}), 500
 
 
 # ════════════════════════════════
@@ -219,20 +187,20 @@ def stream_video(filename):
 
     size = os.path.getsize(path)
 
-    # حالة ضغط المستخدم على زر "تحميل"
+    # حالة التحميل المباشر
     if force_dl:
         return Response(
             _chunks(path), status=200, mimetype="video/mp4",
             headers={
                 "Content-Length":      str(size),
-                "Content-Disposition": 'attachment; filename="VidFetch_Video.mp4"',
+                "Content-Disposition": 'attachment; filename="VidFetch_HD_Video.mp4"',
                 "Cache-Control":       "no-cache",
             }
         )
 
     rng = request.headers.get("Range")
 
-    # بث الفيديو كامل (إذا لم يطلب المتصفح أجزاء)
+    # بث الفيديو كامل
     if not rng:
         return Response(
             _chunks(path), status=200, mimetype="video/mp4",
@@ -243,7 +211,7 @@ def stream_video(filename):
             }
         )
 
-    # بث الفيديو على أجزاء (Partial Content) ليعمل بسلاسة داخل المشغل
+    # بث الفيديو على أجزاء (Partial Content)
     m = re.search(r"bytes=(\d+)-(\d*)", rng)
     if not m:
         abort(416)
@@ -266,8 +234,7 @@ def stream_video(filename):
     )
 
 def _chunks(path, start=0, length=None):
-    """دالة تقطيع الملف لإرساله للمستخدم بدون استهلاك الذاكرة (RAM)"""
-    CHUNK = 1024 * 1024 # تقطيع كل 1 ميجابايت
+    CHUNK = 1024 * 1024 # 1MB
     with open(path, "rb") as f:
         f.seek(start)
         remaining = length

@@ -4,11 +4,12 @@ import uuid
 import time
 import subprocess
 import sys
+import urllib.request
 from flask import Flask, render_template, request, jsonify, Response, abort
 import yt_dlp
 import imageio_ffmpeg
 
-# ✅ تحديث yt-dlp تلقائياً
+# ✅ تحديث yt-dlp تلقائياً عند كل بدء تشغيل
 try:
     subprocess.run(
         [sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "-q"],
@@ -16,7 +17,7 @@ try:
     )
     print("[INFO] yt-dlp updated.")
 except Exception as e:
-    print(f"[WARN] {e}")
+    print(f"[WARN] yt-dlp update failed: {e}")
 
 app = Flask(__name__)
 DOWNLOAD_FOLDER = "downloads"
@@ -44,25 +45,71 @@ if os.path.exists("cookies.txt"):
     BASE_OPTS["cookiefile"] = "cookies.txt"
 
 
+# ══════════════════════════════════════
+#  PLATFORM DETECTION
+# ══════════════════════════════════════
+def is_youtube(url):
+    return "youtube.com" in url or "youtu.be" in url
+
+def is_youtube_live(url):
+    return "youtube.com/live/" in url or "youtube.com/watch" in url
+
 def is_tiktok(url):
-    return "tiktok.com" in url or "vm.tiktok.com" in url
+    return "tiktok.com" in url
+
+def is_instagram(url):
+    return "instagram.com" in url
 
 
+# ══════════════════════════════════════
+#  BUILD OPTIONS PER PLATFORM
+# ══════════════════════════════════════
 def get_extract_opts(url):
     opts = dict(BASE_OPTS)
     opts["http_headers"] = dict(BASE_OPTS["http_headers"])
+
     if is_tiktok(url):
         opts["http_headers"]["Referer"] = "https://www.tiktok.com/"
+
+    elif is_instagram(url):
+        opts["http_headers"]["Referer"] = "https://www.instagram.com/"
+
+    elif is_youtube(url):
+        # ✅ حل مشكلة PO Token في YouTube
+        # يجرّب جميع player clients حتى يجد واحداً يعمل
+        opts["extractor_args"] = {
+            "youtube": {
+                "player_client": ["ios", "android", "web", "mweb"],
+                "skip": ["hls", "dash"],
+            }
+        }
+
     return opts
 
 
 def get_stream_opts(url, filepath):
     opts = get_extract_opts(url)
-    fmt = (
-        "best[ext=mp4]/best"
-        if is_tiktok(url)
-        else "bestvideo[height<=480]+bestaudio/best[height<=480]/best"
-    )
+
+    if is_tiktok(url) or is_instagram(url):
+        fmt = "best[ext=mp4]/best"
+    elif is_youtube(url):
+        # ✅ YouTube: بدون تحديد ext حتى يعمل مع ios/android clients
+        fmt = (
+            "bestvideo[height<=480]+bestaudio"
+            "/bestvideo[height<=480]+bestaudio[ext=m4a]"
+            "/best[height<=480]"
+            "/best"
+        )
+        # ✅ أزل skip لأننا نحتاج hls أحياناً للتحميل
+        if "extractor_args" in opts:
+            opts["extractor_args"]["youtube"].pop("skip", None)
+    else:
+        fmt = (
+            "bestvideo[height<=480]+bestaudio"
+            "/best[height<=480]"
+            "/best"
+        )
+
     opts.update({
         "ffmpeg_location":     FFMPEG_PATH,
         "format":              fmt,
@@ -71,14 +118,15 @@ def get_stream_opts(url, filepath):
         "retries":             5,
         "fragment_retries":    5,
     })
+
     return opts
 
 
-def get_all_download_urls(info):
-    """
-    يُرجع دائماً رابطين على الأقل (best, low).
-    يضمن عدم إرجاع None حتى لو YouTube يفصل الصوت عن الفيديو.
-    """
+# ══════════════════════════════════════
+#  SMART URL EXTRACTOR
+#  يضمن دائماً إرجاع رابطين صالحين
+# ══════════════════════════════════════
+def get_all_download_urls(info, original_url):
     formats = info.get("formats", [])
 
     # ── الصيغ المدمجة (video + audio معاً) ──
@@ -91,11 +139,16 @@ def get_all_download_urls(info):
     merged.sort(key=lambda f: (f.get('height') or 0), reverse=True)
 
     if merged:
-        best_url = merged[0]['url']
-        low_url  = merged[-1]['url']
-        return {"best": best_url, "low": low_url}
+        best = merged[0]['url']
+        low  = merged[-1]['url']
 
-    # ── YouTube: روابط منفصلة — خذ أفضل فيديو كـ fallback ──
+        # ✅ TikTok/Instagram: روابط CDN تحتاج proxy
+        if is_tiktok(original_url) or is_instagram(original_url):
+            best = f"/proxy-dl?url={urllib.parse.quote(best)}&platform=tiktok"
+            low  = best
+        return {"best": best, "low": low}
+
+    # ── YouTube: فيديو وصوت منفصلان — خذ أفضل فيديو فقط ──
     video_only = [
         f for f in formats
         if f.get('vcodec') not in ('none', None) and f.get('url')
@@ -103,12 +156,10 @@ def get_all_download_urls(info):
     video_only.sort(key=lambda f: (f.get('height') or 0), reverse=True)
 
     if video_only:
-        return {
-            "best": video_only[0]['url'],
-            "low":  video_only[-1]['url'] if len(video_only) > 1 else video_only[0]['url'],
-        }
+        best = video_only[0]['url']
+        low  = video_only[-1]['url'] if len(video_only) > 1 else best
+        return {"best": best, "low": low}
 
-    # ── آخر حل ──
     fallback = info.get('url') or ""
     return {"best": fallback, "low": fallback}
 
@@ -124,6 +175,9 @@ def cleanup_old_files():
         pass
 
 
+# ══════════════════════════════════════
+#  ROUTES
+# ══════════════════════════════════════
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -146,13 +200,14 @@ def download():
     dl_best   = ""
     dl_low    = ""
 
-    # ══ PHASE 1: استخراج ══
+    # ══ PHASE 1: استخراج المعلومات ══
     try:
-        with yt_dlp.YoutubeDL(get_extract_opts(url)) as ydl:
+        extract_opts = get_extract_opts(url)
+        with yt_dlp.YoutubeDL(extract_opts) as ydl:
             info      = ydl.extract_info(url, download=False)
             title     = info.get("title", title)
             thumbnail = info.get("thumbnail", thumbnail)
-            urls      = get_all_download_urls(info)
+            urls      = get_all_download_urls(info, url)
             dl_best   = urls["best"] or ""
             dl_low    = urls["low"]  or ""
 
@@ -164,6 +219,8 @@ def download():
             return jsonify({"error": "هذا الفيديو خاص."}), 500
         if "unavailable" in msg.lower():
             return jsonify({"error": "الفيديو غير متاح أو محذوف."}), 500
+        if "Requested format is not available" in msg:
+            return jsonify({"error": "الصيغة غير متاحة لهذا الفيديو. جرّب رابطاً آخر أو تحقق أن الفيديو متاح للعموم."}), 500
         return jsonify({"error": f"فشل الاستخراج: {msg}"}), 500
     except Exception as e:
         return jsonify({"error": f"خطأ: {str(e)}"}), 500
@@ -203,6 +260,65 @@ def download():
     })
 
 
+# ══════════════════════════════════════
+#  ✅ PROXY ENDPOINT — لحل مشكلة TikTok CDN
+#  يبث الفيديو عبر السيرفر مع headers صحيحة
+# ══════════════════════════════════════
+import urllib.parse
+
+@app.route("/proxy-dl")
+def proxy_download():
+    import urllib.request as ur
+
+    raw_url  = request.args.get("url", "")
+    platform = request.args.get("platform", "")
+
+    if not raw_url:
+        abort(400)
+
+    # headers حسب المنصة
+    headers = {
+        "User-Agent":      USER_AGENT,
+        "Accept":          "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    if platform == "tiktok":
+        headers["Referer"] = "https://www.tiktok.com/"
+    elif platform == "instagram":
+        headers["Referer"] = "https://www.instagram.com/"
+
+    try:
+        req = ur.Request(raw_url, headers=headers)
+        remote = ur.urlopen(req, timeout=30)
+        content_type = remote.headers.get("Content-Type", "video/mp4")
+        content_len  = remote.headers.get("Content-Length", "")
+
+        resp_headers = {
+            "Content-Type":        content_type,
+            "Accept-Ranges":       "bytes",
+            "Cache-Control":       "no-cache",
+            "Content-Disposition": "attachment; filename=video.mp4",
+        }
+        if content_len:
+            resp_headers["Content-Length"] = content_len
+
+        def stream():
+            while True:
+                chunk = remote.read(1024 * 64)
+                if not chunk:
+                    break
+                yield chunk
+
+        return Response(stream(), status=200, headers=resp_headers)
+
+    except Exception as e:
+        print(f"[PROXY ERROR] {e}")
+        abort(502)
+
+
+# ══════════════════════════════════════
+#  STREAM — Range Requests
+# ══════════════════════════════════════
 @app.route("/stream/<filename>")
 def stream_video(filename):
     filename = os.path.basename(filename)

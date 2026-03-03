@@ -6,119 +6,44 @@
     <title>VidFetch - تحميل الفيديو بضغطة واحدة</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        /* 🎨 ألوان وتصميم مريح للعين (Dark Mode Minimalist) */
         :root {
-            --bg: #0f172a;
-            --surface: #1e293b;
-            --primary: #6366f1;
-            --primary-hover: #4f46e5;
-            --success: #10b981;
-            --success-hover: #059669;
-            --text: #f8fafc;
-            --text-muted: #94a3b8;
-            --error: #ef4444;
+            --bg: #0f172a; --surface: #1e293b; --primary: #6366f1;
+            --primary-hover: #4f46e5; --success: #10b981; --success-hover: #059669;
+            --text: #f8fafc; --text-muted: #94a3b8; --error: #ef4444;
         }
-
         body {
-            font-family: 'Noto Kufi Arabic', sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            margin: 0;
-            padding: 2rem 1rem;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
+            font-family: 'Noto Kufi Arabic', sans-serif; background-color: var(--bg);
+            color: var(--text); margin: 0; padding: 2rem 1rem;
+            display: flex; flex-direction: column; align-items: center; min-height: 100vh;
         }
-
-        .container {
-            width: 100%;
-            max-width: 550px; /* تصميم ضيق لتركيز عين المستخدم */
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-        }
-
-        /* 🏷️ الترويسة */
+        .container { width: 100%; max-width: 550px; display: flex; flex-direction: column; gap: 1.5rem; }
         .header { text-align: center; margin-bottom: 1rem; }
         .header h1 { margin: 0; font-size: 2.2rem; color: #fff; }
         .header p { color: var(--text-muted); font-size: 0.95rem; margin-top: 0.5rem; }
-
-        /* 📦 الصناديق */
-        .card {
-            background: var(--surface);
-            padding: 1.5rem;
-            border-radius: 1rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-        }
-
-        /* 🔍 مربع الإدخال */
-        .input-group {
-            display: flex;
-            gap: 0.75rem;
-        }
-        @media(max-width: 480px){
-            .input-group { flex-direction: column; }
-        }
-
+        .card { background: var(--surface); padding: 1.5rem; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        .input-group { display: flex; gap: 0.75rem; }
+        @media(max-width: 480px){ .input-group { flex-direction: column; } }
         input {
-            flex: 1;
-            padding: 1rem;
-            border: 1px solid #334155;
-            background: #0f172a;
-            color: #fff;
-            border-radius: 0.5rem;
-            outline: none;
-            font-size: 1rem;
-            direction: ltr; /* مهم جداً للروابط لتبقى من اليسار لليمين */
+            flex: 1; padding: 1rem; border: 1px solid #334155; background: #0f172a;
+            color: #fff; border-radius: 0.5rem; outline: none; font-size: 1rem; direction: ltr;
         }
         input:focus { border-color: var(--primary); }
-
         button.main-btn {
-            padding: 1rem 1.5rem;
-            background: var(--primary);
-            color: white;
-            border: none;
-            border-radius: 0.5rem;
-            font-family: inherit;
-            font-weight: bold;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: background 0.2s;
-            white-space: nowrap;
+            padding: 1rem 1.5rem; background: var(--primary); color: white; border: none;
+            border-radius: 0.5rem; font-family: inherit; font-weight: bold; font-size: 1rem;
+            cursor: pointer; transition: background 0.2s; white-space: nowrap;
         }
         button.main-btn:hover:not(:disabled) { background: var(--primary-hover); }
         button.main-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-        /* ⏳ حالات التحميل والخطأ */
         #loading { display: none; text-align: center; color: var(--text-muted); margin-top: 1rem; font-size: 0.95rem;}
         #error { display: none; background: rgba(239,68,68,0.1); color: var(--error); padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; font-size: 0.9rem; border: 1px solid rgba(239,68,68,0.3);}
-
-        /* 🎬 النتيجة (مشغل الفيديو وزر التحميل) */
         #result { display: none; margin-top: 0.5rem; }
-        
-        .video-container {
-            width: 100%;
-            border-radius: 0.5rem;
-            overflow: hidden;
-            background: #000;
-            margin-bottom: 1rem;
-        }
+        .video-container { width: 100%; border-radius: 0.5rem; overflow: hidden; background: #000; margin-bottom: 1rem; }
         video { width: 100%; display: block; max-height: 400px; object-fit: contain;}
-
         .download-btn {
-            display: block;
-            width: 100%;
-            text-align: center;
-            background: var(--success);
-            color: #fff;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            text-decoration: none;
-            font-weight: bold;
-            font-size: 1.1rem;
-            transition: background 0.2s, transform 0.1s;
-            box-sizing: border-box;
+            display: block; width: 100%; text-align: center; background: var(--success);
+            color: #fff; padding: 1rem; border-radius: 0.5rem; text-decoration: none;
+            font-weight: bold; font-size: 1.1rem; transition: background 0.2s, transform 0.1s; box-sizing: border-box;
         }
         .download-btn:hover { background: var(--success-hover); transform: translateY(-2px); }
     </style>
@@ -137,7 +62,7 @@
                 <button id="goBtn" class="main-btn" onclick="fetchVideo()">معالجة ⚡</button>
             </div>
             
-            <div id="loading">⏳ جاري تجهيز الفيديو، يرجى الانتظار ثانية...</div>
+            <div id="loading">⏳ جاري جلب الفيديو بأعلى جودة...</div>
             <div id="error"></div>
         </div>
 
@@ -150,7 +75,6 @@
     </div>
 
     <script>
-        // إتاحة الضغط على زر Enter للبحث مباشرة
         document.getElementById('urlInput').addEventListener('keypress', function (e) {
             if (e.key === 'Enter') fetchVideo();
         });
@@ -164,55 +88,77 @@
             const playerWrap = document.getElementById('playerWrap');
             const downloadBtn = document.getElementById('downloadBtn');
 
-            // 1. التحقق من المدخلات
             if (!url) {
                 showError("الرجاء إدخال رابط الفيديو أولاً.");
                 return;
             }
 
-            // 2. إعادة ضبط الواجهة قبل الإرسال
             errorBox.style.display = 'none';
             resultBox.style.display = 'none';
             btn.disabled = true;
             loading.style.display = 'block';
 
-            try {
-                // 3. الاتصال بسيرفرك الآمن
-                const response = await fetch('/download', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url })
-                });
+            // 🚀 شبكة سيرفرات Cobalt المجانية (التدوير الذكي)
+            const instances = [
+                "https://api.cobalt.tools/api/json",           // الرسمي
+                "https://cobalt-api.kwiatekmiki.com/api/json", // احتياطي 1
+                "https://api.cobalt.lol/api/json",             // احتياطي 2
+                "https://cobalt.qas.im/api/json",              // احتياطي 3
+                "https://api.zeon.dev/api/json"                // احتياطي 4
+            ];
 
-                const data = await response.json();
+            let directUrl = null;
+            let lastErrorMsg = "جميع السيرفرات تواجه ضغطاً حالياً. جرب بعد قليل.";
 
-                // 4. معالجة الأخطاء القادمة من السيرفر
-                if (!response.ok || data.error) {
-                    throw new Error(data.error || "حدث خطأ غير متوقع أثناء معالجة الرابط.");
+            // الجافاسكريبت في هاتف المستخدم سيجرب السيرفرات واحداً تلو الآخر
+            for (let apiUrl of instances) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ 
+                            url: url,
+                            videoQuality: "max",   // أعلى جودة
+                            vCodec: "h264",        // صيغة تدعم جميع الأجهزة
+                            filenamePattern: "classic" 
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok && data.status !== "error" && data.url) {
+                        directUrl = data.url;
+                        break; // نجحنا! أوقف حلقة البحث
+                    } else if (data.status === "error") {
+                        // إذا كان الرابط نفسه فيه مشكلة (مثلاً فيديو خاص)
+                        lastErrorMsg = data.text || "الفيديو خاص أو الرابط غير مدعوم.";
+                        if(data.text && data.text.includes("supported")) break; // لا تكمل إذا الرابط غير مدعوم
+                    }
+                } catch (e) {
+                    console.log("السيرفر مشغول، جاري تجربة سيرفر آخر...", apiUrl);
+                    continue;
                 }
+            }
 
-                // 5. عرض الفيديو (Preview)
+            btn.disabled = false;
+            loading.style.display = 'none';
+
+            if (directUrl) {
+                // عرض النتيجة
                 playerWrap.innerHTML = `
-                    <video controls playsinline poster="${data.thumbnail || ''}">
-                        <source src="${data.stream_url}" type="video/mp4">
+                    <video controls playsinline>
+                        <source src="${directUrl}" type="video/mp4">
                     </video>`;
-                
-                // 6. تجهيز زر التحميل المباشر
-                downloadBtn.href = data.download_url_high;
-
-                // 7. إظهار النتيجة للمستخدم
+                downloadBtn.href = directUrl;
                 resultBox.style.display = 'block';
-
-            } catch (err) {
-                showError(err.message);
-            } finally {
-                // 8. إعادة تفعيل الزر وإخفاء رسالة التحميل
-                btn.disabled = false;
-                loading.style.display = 'none';
+            } else {
+                showError(lastErrorMsg);
             }
         }
 
-        // دالة مساعدة لعرض الأخطاء بشكل أنيق
         function showError(msg) {
             const errorBox = document.getElementById('error');
             errorBox.textContent = '⚠️ ' + msg;

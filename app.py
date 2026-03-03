@@ -1,4 +1,5 @@
-import os, re, uuid, time, subprocess, sys
+import os, re, uuid, time, subprocess, sys, json
+import urllib.request
 from flask import Flask, render_template, request, jsonify, Response, abort
 import yt_dlp, imageio_ffmpeg
 
@@ -28,6 +29,10 @@ COOKIES = "cookies.txt" if os.path.exists("cookies.txt") else None
 def is_youtube(url):   return "youtube.com" in url or "youtu.be" in url
 def is_tiktok(url):    return "tiktok.com" in url
 def is_instagram(url): return "instagram.com" in url
+
+def extract_yt_id(url):
+    m = re.search(r"(?:v=|youtu\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})", url)
+    return m.group(1) if m else None
 
 
 # ════════════════════════════════
@@ -119,22 +124,47 @@ def index():
     return render_template("index.html")
 
 
+
 @app.route("/download", methods=["POST"])
 def download():
     cleanup_old_files()
-
     body = request.get_json()
     if not body or not body.get("url"):
         return jsonify({"error": "رابط غير صالح."}), 400
+    url = body["url"].strip()
 
-    url     = body["url"].strip()
+    # YouTube: embed iframe - no server download needed
+    if is_youtube(url):
+        vid_id = extract_yt_id(url)
+        if not vid_id:
+            return jsonify({"error": "تعذّر استخراج معرّف الفيديو."}), 400
+        title     = "YouTube Video"
+        thumbnail = f"https://img.youtube.com/vi/{vid_id}/maxresdefault.jpg"
+        try:
+            oembed_url = (f"https://www.youtube.com/oembed"
+                          f"?url=https://www.youtube.com/watch?v={vid_id}&format=json")
+            req = urllib.request.Request(oembed_url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                data      = json.loads(r.read())
+                title     = data.get("title", title)
+                thumbnail = data.get("thumbnail_url", thumbnail)
+        except Exception:
+            pass
+        return jsonify({
+            "title":             title,
+            "thumbnail":         thumbnail,
+            "preview_type":      "youtube_embed",
+            "embed_url":         f"https://www.youtube.com/embed/{vid_id}?autoplay=1&rel=0",
+            "stream_url":        "",
+            "download_url_high": f"https://www.youtube.com/watch?v={vid_id}",
+            "download_url_low":  f"https://youtu.be/{vid_id}",
+        })
+
+    # TikTok / Instagram / others: download to server
     file_id = str(uuid.uuid4())
     fpath   = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
-
     title     = "Video"
     thumbnail = "https://img.icons8.com/color/96/000000/video.png"
-
-    # ── Phase 1: جلب title/thumbnail (اختياري) ──
     try:
         with yt_dlp.YoutubeDL(build_opts(url)) as ydl:
             info      = ydl.extract_info(url, download=False)
@@ -142,53 +172,30 @@ def download():
             thumbnail = info.get("thumbnail", thumbnail)
     except Exception as e:
         print(f"[Phase1] {e}")
-
-    # ── Phase 2: التحميل الفعلي ──
     try:
         with yt_dlp.YoutubeDL(build_opts(url, fpath)) as ydl:
             ydl.download([url])
-
-        server_file = find_file(file_id)
-        if not server_file:
-            raise FileNotFoundError("الملف لم يُوجد بعد التحميل.")
-
-        stream_url = f"/stream/{server_file}"
-        dl_url     = f"/stream/{server_file}?dl=1"
-
+        sf = find_file(file_id)
+        if not sf:
+            raise FileNotFoundError("الملف لم يوجد.")
         return jsonify({
             "title":             title,
             "thumbnail":         thumbnail,
-            "stream_url":        stream_url,
             "preview_type":      "video",
-            "download_url_high": dl_url,
-            "download_url_low":  dl_url,
+            "stream_url":        f"/stream/{sf}",
+            "download_url_high": f"/stream/{sf}?dl=1",
+            "download_url_low":  f"/stream/{sf}?dl=1",
         })
-
     except yt_dlp.utils.DownloadError as e:
         msg = str(e)
-        if "403" in msg:
-            err = "المنصة رفضت الطلب (403). تحتاج ملف cookies.txt"
-        elif "Private video" in msg:
-            err = "هذا الفيديو خاص ولا يمكن الوصول إليه."
-        elif "unavailable" in msg.lower():
-            err = "الفيديو غير متاح أو محذوف."
-        elif is_youtube(url) and not COOKIES:
-            err = (
-                "YouTube يحجب سيرفر Render.\n"
-                "الحل: أضف ملف cookies.txt للمشروع.\n"
-                "ثبّت 'Get cookies.txt LOCALLY' على Chrome ← افتح youtube.com ← Export"
-            )
-        else:
-            err = f"فشل التحميل: {msg[-200:]}"
+        if "403"           in msg: err = "المنصة رفضت الطلب (403)."
+        elif "Private"     in msg: err = "هذا المحتوى خاص."
+        elif "unavailable" in msg.lower(): err = "المحتوى غير متاح."
+        else: err = f"فشل التحميل: {msg[-120:]}"
         return jsonify({"error": err}), 500
-
     except Exception as e:
-        return jsonify({"error": f"خطأ: {str(e)[-150:]}"}), 500
+        return jsonify({"error": f"خطأ: {str(e)[-100:]}"}), 500
 
-
-# ════════════════════════════════
-#  STREAM — بث مع Range Requests
-# ════════════════════════════════
 @app.route("/stream/<filename>")
 def stream_video(filename):
     filename = os.path.basename(filename)

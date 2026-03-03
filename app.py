@@ -64,14 +64,15 @@ def build_opts(url, filepath=None):
     opts = dict(BASE_OPTS)
     opts["http_headers"] = dict(BASE_OPTS["http_headers"])
 
-    # ── YouTube: استخدم ios client لتجاوز PO Token ──
+    # ── YouTube: clients تتجاوز PO Token على سيرفرات cloud ──
     if is_youtube(url):
         opts["extractor_args"] = {
             "youtube": {
-                # ios لا يحتاج PO Token — الأفضل للسيرفرات
-                "player_client": ["ios", "android_vr", "web_creator"],
+                # tv_embedded + ios الأفضل على السيرفرات — لا يحتاجان PO Token
+                "player_client": ["tv_embedded", "ios", "android_vr", "android"],
             }
         }
+        opts["geo_bypass"] = True
 
     # ── TikTok / Instagram ──
     elif is_tiktok(url):
@@ -203,9 +204,9 @@ def download():
             return jsonify({"error": "هذا الفيديو خاص."}), 500
         if "unavailable" in msg.lower():
             return jsonify({"error": "الفيديو غير متاح أو محذوف."}), 500
-        if "Requested format" in msg:
-            return jsonify({"error": "تعذّر استخراج الفيديو من هذا الرابط. تأكد أنه متاح للعموم."}), 500
-        return jsonify({"error": f"فشل الاستخراج: {msg}"}), 500
+        if "Requested format" in msg or "not available" in msg.lower():
+            return jsonify({"error": f"تعذّر استخراج الفيديو — {msg[-200:]}"}), 500
+        return jsonify({"error": f"فشل الاستخراج: {msg[-300:]}"}), 500
     except Exception as e:
         return jsonify({"error": f"خطأ: {e}"}), 500
 

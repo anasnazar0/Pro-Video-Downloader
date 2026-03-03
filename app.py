@@ -1,30 +1,12 @@
 import os
-import re
 import requests
 from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
-# ==========================================
-# 🔑 إعدادات السيرفر التجاري (RapidAPI)
-# ==========================================
-# ⚠️ ضع مفتاحك السري هنا بين علامتي التنصيص
-RAPIDAPI_KEY = "d125b5130fmsha9cd16bd72f1fc4p1b1ccejsnde077a9fb92f" 
-RAPIDAPI_HOST = "social-media-video-downloader.p.rapidapi.com"
-API_URL = "https://social-media-video-downloader.p.rapidapi.com/youtube/video_details"
-
-
-def get_yt_video_id(url):
-    """دالة لاستخراج المعرف (ID) من أي رابط يوتيوب"""
-    regex = r'(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})'
-    match = re.search(regex, url)
-    return match.group(1) if match else None
-
-
 @app.route("/")
 def index():
     return render_template("index.html")
-
 
 @app.route("/download", methods=["POST"])
 def download():
@@ -34,71 +16,68 @@ def download():
         return jsonify({"error": "الرجاء إرسال رابط صحيح."}), 400
 
     raw_url = body["url"].strip()
-    video_id = get_yt_video_id(raw_url)
+
+    # ==========================================
+    # 🛡️ الاستراتيجية 3: التخفي كمتصفح حقيقي (Proper Headers)
+    # ==========================================
+    API_URL = "https://api.cobalt.tools/api/json"
     
-    if not video_id:
-        return jsonify({"error": "⚠️ عذراً، هذا لا يبدو كرابط يوتيوب صالح."}), 400
-
-    # إعدادات الطلب للـ API
-    querystring = {
-        "videoId": video_id,
-        "renderableFormats": "720p,highres",
-        "urlAccess": "proxied" # بروكسي لتخطي الحظر
-    }
-
+    # 1. هذه الترويسات (Headers) هي السر.. تخبر السيرفر أننا حاسوب حقيقي ولسنا بوتاً
     headers = {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
-        "X-RapidAPI-Host": RAPIDAPI_HOST
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+        "Sec-Ch-Ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Referer": "https://cobalt.tools/"
+    }
+    
+    # 2. خيارات Cobalt المتقدمة (للحصول على فيديو مدمج بصوت وصورة)
+    payload = {
+        "url": raw_url,
+        "videoQuality": "max",        # طلب أعلى جودة متوفرة (1080p فما فوق)
+        "vCodec": "h264",             # صيغة مدعومة على الآيفون والأندرويد القديم والحديث
+        "alwaysProxy": True,          # 🚀 السر لعدم ظهور خطأ 403 (إجبار التحميل عبر سيرفراتهم)
+        "isAudioOnly": False,         # نريد فيديو وليس صوت فقط
+        "filenamePattern": "classic"  # اسم ملف نظيف ومرتب
     }
 
     try:
-        # إرسال الطلب
-        response = requests.get(API_URL, headers=headers, params=querystring, timeout=15)
+        # إرسال الطلب للسيرفر مع هويتنا المزيفة
+        response = requests.post(API_URL, json=payload, headers=headers, timeout=15)
         
+        # إذا كشفنا السيرفر أو كان عليه ضغط
         if response.status_code != 200:
-            return jsonify({"error": f"خطأ من مزود الخدمة: {response.status_code}"}), 500
+            raise Exception("سيرفرات التحميل تواجه ضغطاً أو ترفض الاتصال حالياً. حاول لاحقاً.")
 
         data = response.json()
 
-        # ==========================================
-        # 🔍 قراءة الـ JSON واستخراج الرابط
-        # ==========================================
-        contents = data.get("contents", [])
-        if not contents:
-            raise Exception("لم يتم العثور على محتوى للفيديو.")
-            
-        videos = contents[0].get("videos", [])
-        direct_url = None
-        
-        # البحث عن أفضل جودة بصيغة mp4
-        for vid in videos:
-            mime = vid.get("metadata", {}).get("mime_type", "")
-            if "mp4" in mime:
-                direct_url = vid.get("url")
-                break # نأخذ أول وأعلى جودة نجدها
-                
-        # إذا لم يجد mp4 تحديداً، يأخذ أي فيديو متوفر
-        if not direct_url and videos:
-            direct_url = videos[0].get("url")
+        # إذا رد الـ API نفسه بوجود مشكلة في الفيديو (مثلا محذوف)
+        if data.get("status") == "error":
+            error_text = data.get("text", "الفيديو غير متاح أو محمي.")
+            raise Exception(f"خطأ من المزود: {error_text}")
+
+        # استخراج الرابط المباشر
+        direct_url = data.get("url")
 
         if not direct_url:
-            raise Exception("تعذر جلب الرابط المباشر من مزود الخدمة.")
+            raise Exception("تمت المعالجة ولكن تعذر جلب رابط التحميل.")
 
-        # استخراج صورة مصغرة أنيقة
-        thumbnail_url = f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
-
+        # إرسال البيانات الجاهزة لواجهة الموقع
         return jsonify({
-            "title": "VidFetch Premium Video", 
-            "thumbnail": thumbnail_url,
+            "title": "VidFetch Video", 
+            "thumbnail": "https://img.icons8.com/color/96/000000/video.png",
             "stream_url": direct_url,
             "download_url_high": direct_url,
         })
 
     except requests.exceptions.Timeout:
-        return jsonify({"error": "⚠️ انتهى وقت الاتصال بمزود الخدمة."}), 504
+        return jsonify({"error": "⚠️ انتهى وقت الاتصال. السيرفرات مشغولة جداً."}), 504
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
-

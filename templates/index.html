@@ -191,7 +191,15 @@
             width: 100%; background: #000;
             position: relative; overflow: hidden;
             min-height: 200px;
-            /* ✅ لا نستخدم aspect-ratio ثابت */
+        }
+        /* YouTube embed: نسبة 16:9 ثابتة */
+        .player-wrap.yt-embed {
+            aspect-ratio: 16 / 9;
+            min-height: unset;
+        }
+        .player-wrap.yt-embed iframe {
+            width: 100%; height: 100%;
+            display: block; border: none;
         }
         .player-wrap video {
             width: 100%; display: block;
@@ -455,6 +463,7 @@
 
     function buildPlayer(src, thumb) {
         const wrap = document.getElementById('playerWrap');
+        wrap.className = 'player-wrap';
         wrap.innerHTML = `
             <video id="vid" controls autoplay muted playsinline preload="metadata"
                 poster="${esc(thumb)}"
@@ -463,7 +472,6 @@
             </video>`;
 
         const vid = document.getElementById('vid');
-
         vid.addEventListener('loadedmetadata', () => {
             if (vid.videoWidth && vid.videoHeight) {
                 const ratio = vid.videoHeight / vid.videoWidth;
@@ -471,15 +479,28 @@
                 wrap.style.height = Math.min(ideal, 500) + 'px';
             }
         });
-
         vid.addEventListener('error', () => {
             showOverlay(wrap, thumb, '⚠️', 'تعذّر تشغيل الفيديو', 'استخدم أزرار التحميل أدناه');
             setPill(false);
         });
     }
 
+    // ✅ YouTube embed — يعرض الفيديو مباشرة بدون تحميل
+    function buildYouTubeEmbed(embedUrl) {
+        const wrap = document.getElementById('playerWrap');
+        wrap.className = 'player-wrap yt-embed';
+        wrap.innerHTML = `
+            <iframe
+                src="${esc(embedUrl)}"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowfullscreen
+                loading="lazy">
+            </iframe>`;
+    }
+
     function buildNoStream(thumb) {
         const wrap = document.getElementById('playerWrap');
+        wrap.className = 'player-wrap';
         wrap.style.height = '240px';
         showOverlay(wrap, thumb, '📥', 'البث غير متاح', 'استخدم أزرار التحميل أدناه');
     }
@@ -565,16 +586,29 @@
             document.getElementById('vtitle').textContent = data.title || 'فيديو';
 
             // ── المشغل ──
-            if (data.preview_type !== 'error' && data.stream_url) {
+            if (data.preview_type === 'youtube_embed') {
+                // ✅ YouTube: عرض مباشر عبر iframe
+                buildYouTubeEmbed(data.embed_url);
+                const p = document.getElementById('pill');
+                p.className = 'status-pill pill-ok';
+                document.getElementById('pillTxt').textContent = '▶ YouTube';
+                // أزرار التحميل تفتح YouTube مباشرة
+                const btnH = document.getElementById('btnHigh');
+                const btnL = document.getElementById('btnLow');
+                btnH.querySelector('.btn-main').textContent = 'فتح على YouTube';
+                btnH.querySelector('.btn-sub').textContent  = 'youtube.com';
+                btnL.querySelector('.btn-main').textContent = 'رابط مختصر';
+                btnL.querySelector('.btn-sub').textContent  = 'youtu.be';
+                setDownloadButtons(data.download_url_high, data.download_url_low);
+            } else if (data.preview_type === 'video' && data.stream_url) {
                 buildPlayer(data.stream_url, thumb);
                 setPill(true);
+                setDownloadButtons(data.download_url_high, data.download_url_low);
             } else {
                 buildNoStream(thumb);
                 setPill(false);
+                setDownloadButtons(data.download_url_high, data.download_url_low);
             }
-
-            // ── ✅ أزرار التحميل — تظهر دائماً ──
-            setDownloadButtons(data.download_url_high, data.download_url_low);
 
             res.style.display = 'block';
             res.scrollIntoView({ behavior: 'smooth', block: 'nearest' });

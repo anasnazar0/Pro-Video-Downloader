@@ -1,98 +1,200 @@
 import os
 import re
-import requests
-from flask import Flask, render_template, request, jsonify
+import uuid
+import time
+from flask import Flask, render_template, request, jsonify, Response, abort
+import yt_dlp
+import imageio_ffmpeg
+
 
 app = Flask(__name__)
 
-# ==========================================
-# 🛡️ الطبقة الأمنية 1: التحقق من صحة الرابط
-# ==========================================
-def is_valid_url(url):
-    """تتأكد أن المدخل هو رابط إنترنت حقيقي وليس كود اختراق"""
-    regex = re.compile(
-        r'^(?:http|ftp)s?://' # يجب أن يبدأ بـ http:// أو https://
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' # النطاق
-        r'localhost|' # أو لوكال هوست
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})' # أو عنوان IP
-        r'(?::\d+)?' # المنفذ (اختياري)
-        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-    return re.match(regex, url) is not None
+DOWNLOAD_FOLDER = "downloads"
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+
+FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
+
+# ✅ بدون "format" هنا — فقط للاستخراج
+EXTRACT_OPTS = {
+    "quiet": True,
+    "no_warnings": True,
+    "nocheckcertificate": True,
+    "extract_flat": False,
+}
+
+if os.path.exists("cookies.txt"):
+    EXTRACT_OPTS["cookiefile"] = "cookies.txt"
+
+
+def get_best_download_url(formats):
+    """يجلب أفضل رابط مباشر (فيديو + صوت مدمجان)."""
+    # الأولوية 1: mp4 مدمج
+    for f in reversed(formats):
+        if (f.get('vcodec') not in ('none', None) and
+                f.get('acodec') not in ('none', None) and
+                f.get('ext') == 'mp4' and f.get('url')):
+            return f.get('url')
+    # الأولوية 2: أي صيغة مدمجة
+    for f in reversed(formats):
+        if (f.get('vcodec') not in ('none', None) and
+                f.get('acodec') not in ('none', None) and f.get('url')):
+            return f.get('url')
+    return None
+
+
+def cleanup_old_files():
+    try:
+        now = time.time()
+        for f in os.listdir(DOWNLOAD_FOLDER):
+            path = os.path.join(DOWNLOAD_FOLDER, f)
+            if os.path.isfile(path) and now - os.path.getmtime(path) > 7200:
+                os.remove(path)
+    except Exception:
+        pass
+
 
 @app.route("/")
 def index():
     return render_template("index.html")
 
+
 @app.route("/download", methods=["POST"])
 def download():
-    body = request.get_json()
-    
-    # 1. التحقق من وجود بيانات
-    if not body or not body.get("url"):
-        return jsonify({"error": "الرجاء إرسال رابط صحيح."}), 400
+    cleanup_old_files()
 
-    raw_url = body["url"].strip()
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No JSON data received."}), 400
 
-    # 2. الفحص الأمني للرابط
-    if not is_valid_url(raw_url):
-        return jsonify({"error": "⚠️ محاولة غير صالحة. الرجاء إدخال رابط إنترنت آمن."}), 400
+    url = data.get("url")
+    if not url:
+        return jsonify({"error": "Invalid URL provided."}), 400
 
-    # ==========================================
-    # 🚀 الطبقة 2: الاتصال الآمن بـ Cobalt API
-    # ==========================================
-    API_URL = "https://api.cobalt.tools/api/json"
-    
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        # تحديد هوية التطبيق لتجنب الحظر من الـ API
-        "User-Agent": "VidFetch-Secure-Server/1.0" 
-    }
-    
-    payload = {
-        "url": raw_url,
-        "videoQuality": "max", # طلب أعلى جودة دائماً
-        "filenamePattern": "classic" # اسم ملف نظيف
-    }
+    file_id  = str(uuid.uuid4())
+    filepath = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
+
+    best_download_url = None
+    fallback_url      = None
+    title             = "Video Ready"
+    thumbnail         = "https://img.icons8.com/color/96/000000/video.png"
+
+    # ── PHASE 1: استخراج المعلومات فقط ──
+    try:
+        with yt_dlp.YoutubeDL(EXTRACT_OPTS) as ydl:
+            info = ydl.extract_info(url, download=False)
+            title        = info.get("title", title)
+            thumbnail    = info.get("thumbnail", thumbnail)
+            fallback_url = info.get("url")
+            formats      = info.get("formats", [])
+            best_download_url = get_best_download_url(formats)
+            if not best_download_url:
+                best_download_url = fallback_url
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch video details: {str(e)}"}), 500
+
+    # ── PHASE 2: تحميل الفيديو على السيرفر للبث ──
+    stream_url   = ""
+    preview_type = "video"
 
     try:
-        # إرسال الطلب مع تحديد وقت أقصى (Timeout) لمنع تعليق السيرفر
-        response = requests.post(API_URL, json=payload, headers=headers, timeout=15)
-        
-        # إذا كان السيرفر الخارجي معطلاً (مثل 500 أو 429)
-        if response.status_code != 200:
-            raise Exception("سيرفرات التحميل تواجه ضغطاً حالياً. يرجى المحاولة بعد قليل.")
-
-        data = response.json()
-
-        # إذا الـ API نفسه أرجع خطأ (مثلاً الرابط خاص أو غير مدعوم)
-        if data.get("status") == "error":
-            error_text = data.get("text", "الفيديو غير متاح أو محمي.")
-            raise Exception(f"الخدمة: {error_text}")
-
-        # استخراج الرابط النظيف من الـ API
-        direct_url = data.get("url")
-
-        # ==========================================
-        # 🛡️ الطبقة الأمنية 3: تعقيم المخرجات
-        # ==========================================
-        if not direct_url or not direct_url.startswith("https://"):
-            raise Exception("تم استلام استجابة غير آمنة من المزود. تم حجب العملية حمايةً لك.")
-
-        # تجهيز البيانات للواجهة الأمامية (متوافقة 100% مع كود الـ HTML الخاص بك)
-        return jsonify({
-            "title": "VidFetch Video (Secure)", 
-            "thumbnail": "https://img.icons8.com/color/96/000000/video.png",
-            "stream_url": direct_url,
-            "preview_type": "video",
-            "download_url_high": direct_url,
-            "download_url_low": direct_url,
+        stream_opts = dict(EXTRACT_OPTS)
+        stream_opts.update({
+            "ffmpeg_location": FFMPEG_PATH,
+            "format": (
+                "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]"
+                "/bestvideo[height<=480]+bestaudio"
+                "/best[height<=480]"
+                "/best"
+            ),
+            "outtmpl": filepath,
+            "merge_output_format": "mp4",
         })
 
-    except requests.exceptions.Timeout:
-        return jsonify({"error": "⚠️ انتهى وقت الاتصال. السيرفرات مشغولة، حاول مجدداً."}), 504
+        with yt_dlp.YoutubeDL(stream_opts) as ydl_down:
+            ydl_down.download([url])
+
+        final_file = None
+        for f in os.listdir(DOWNLOAD_FOLDER):
+            if f.startswith(file_id) and f.endswith(".mp4"):
+                final_file = f
+                break
+        if not final_file:
+            for f in os.listdir(DOWNLOAD_FOLDER):
+                if f.startswith(file_id):
+                    final_file = f
+                    break
+
+        if final_file:
+            stream_url = f"/stream/{final_file}"
+        else:
+            raise Exception("File not found after download.")
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        preview_type = "error"
+        stream_url   = ""
+        print(f"[STREAM ERROR] {e}")
+
+    return jsonify({
+        "title":             title,
+        "thumbnail":         thumbnail,
+        "stream_url":        stream_url,
+        "preview_type":      preview_type,
+        "download_url_high": best_download_url,
+        "download_url_low":  fallback_url,
+    })
+
+
+# ── STREAM مع دعم Range Requests الكامل ──
+@app.route("/stream/<filename>")
+def stream_video(filename):
+    filename = os.path.basename(filename)
+    path     = os.path.join(DOWNLOAD_FOLDER, filename)
+
+    if not os.path.exists(path):
+        abort(404)
+
+    file_size    = os.path.getsize(path)
+    range_header = request.headers.get("Range")
+
+    if not range_header:
+        def full_stream():
+            with open(path, "rb") as f:
+                while chunk := f.read(1024 * 1024):
+                    yield chunk
+        return Response(full_stream(), status=200, mimetype="video/mp4",
+                        headers={"Content-Length": str(file_size),
+                                 "Accept-Ranges":  "bytes",
+                                 "Cache-Control":  "no-cache"})
+
+    match = re.search(r"bytes=(\d+)-(\d*)", range_header)
+    if not match:
+        abort(416)
+
+    byte1 = int(match.group(1))
+    byte2 = int(match.group(2)) if match.group(2) else file_size - 1
+    byte2 = min(byte2, file_size - 1)
+    if byte1 > byte2:
+        abort(416)
+
+    length = byte2 - byte1 + 1
+
+    def partial_stream():
+        with open(path, "rb") as f:
+            f.seek(byte1)
+            remaining = length
+            while remaining > 0:
+                data = f.read(min(1024 * 1024, remaining))
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+    return Response(partial_stream(), status=206, mimetype="video/mp4",
+                    headers={"Content-Range":  f"bytes {byte1}-{byte2}/{file_size}",
+                             "Accept-Ranges":  "bytes",
+                             "Content-Length": str(length),
+                             "Cache-Control":  "no-cache"})
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

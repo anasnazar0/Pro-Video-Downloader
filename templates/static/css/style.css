@@ -1,0 +1,548 @@
+/* ==========================================
+   VidFetch — نظام التصميم الأساسي
+   ========================================== */
+
+:root {
+    /* الألوان */
+    --bg-primary:    #0a0a0f;
+    --bg-card:       rgba(255, 255, 255, 0.04);
+    --bg-card-hover: rgba(255, 255, 255, 0.07);
+    --bg-input:      rgba(255, 255, 255, 0.06);
+    --text-primary:  #f0f0f5;
+    --text-secondary:#8a8a9a;
+    --text-muted:    #55556a;
+    --accent-1:      #6c5ce7;
+    --accent-2:      #a855f7;
+    --accent-3:      #06b6d4;
+    --gradient:      linear-gradient(135deg, var(--accent-1), var(--accent-2), var(--accent-3));
+    --glow-1:        rgba(108, 92, 231, 0.15);
+    --glow-2:        rgba(168, 85, 247, 0.1);
+    --glow-3:        rgba(6, 182, 212, 0.1);
+    --border:        rgba(255, 255, 255, 0.08);
+    --danger:        #ef4444;
+    --success:       #22c55e;
+    --radius:        16px;
+    --radius-sm:     10px;
+    --radius-xs:     8px;
+    --shadow:        0 8px 32px rgba(0, 0, 0, 0.4);
+    --transition:    all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* إعادة تعيين */
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    font-size: 16px;
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: 'Noto Kufi Arabic', 'Inter', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+    line-height: 1.6;
+}
+
+/* ==========================================
+   الخلفية المتحركة
+   ========================================== */
+.bg-glow {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(120px);
+    pointer-events: none;
+    z-index: 0;
+    animation: floatGlow 15s ease-in-out infinite;
+}
+
+.bg-glow-1 {
+    width: 500px;
+    height: 500px;
+    background: var(--glow-1);
+    top: -100px;
+    right: -100px;
+    animation-delay: 0s;
+}
+
+.bg-glow-2 {
+    width: 400px;
+    height: 400px;
+    background: var(--glow-2);
+    bottom: -50px;
+    left: -50px;
+    animation-delay: -5s;
+}
+
+.bg-glow-3 {
+    width: 350px;
+    height: 350px;
+    background: var(--glow-3);
+    top: 40%;
+    left: 50%;
+    animation-delay: -10s;
+}
+
+@keyframes floatGlow {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33%      { transform: translate(30px, -20px) scale(1.1); }
+    66%      { transform: translate(-20px, 30px) scale(0.95); }
+}
+
+/* ==========================================
+   الهيدر
+   ========================================== */
+.header {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    backdrop-filter: blur(20px);
+    background: rgba(10, 10, 15, 0.6);
+    border-bottom: 1px solid var(--border);
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.4rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+}
+
+.logo-icon {
+    width: 28px;
+    height: 28px;
+    color: var(--accent-2);
+    filter: drop-shadow(0 0 8px var(--accent-2));
+}
+
+.header-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 100px;
+    background: var(--gradient);
+    color: white;
+    letter-spacing: 0.5px;
+}
+
+/* ==========================================
+   المحتوى الرئيسي
+   ========================================== */
+.main {
+    position: relative;
+    z-index: 5;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 20px 80px;
+}
+
+/* القسم الترحيبي */
+.hero {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.hero-title {
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-weight: 800;
+    line-height: 1.25;
+    margin-bottom: 14px;
+}
+
+.gradient-text {
+    background: var(--gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.hero-subtitle {
+    color: var(--text-secondary);
+    font-size: 1.05rem;
+    font-weight: 400;
+}
+
+/* ==========================================
+   حقل الإدخال
+   ========================================== */
+.input-section {
+    margin-bottom: 36px;
+}
+
+.input-wrapper {
+    display: flex;
+    align-items: center;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px;
+    transition: var(--transition);
+    gap: 4px;
+}
+
+.input-wrapper:focus-within {
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.15);
+}
+
+.url-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.95rem;
+    padding: 12px 16px;
+    direction: ltr;
+    text-align: right;
+}
+
+.url-input::placeholder {
+    color: var(--text-muted);
+}
+
+.paste-btn {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.paste-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.paste-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: var(--accent-2);
+}
+
+.fetch-btn {
+    flex-shrink: 0;
+    height: 48px;
+    padding: 0 28px;
+    background: var(--gradient);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: white;
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+}
+
+.fetch-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 24px rgba(168, 85, 247, 0.35);
+}
+
+.fetch-btn:active {
+    transform: translateY(0);
+}
+
+.fetch-btn.loading .btn-text {
+    opacity: 0;
+}
+
+.fetch-btn.loading .btn-loader {
+    display: block;
+}
+
+.btn-loader {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 22px;
+    height: 22px;
+    margin: -11px 0 0 -11px;
+    border: 3px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.input-hint {
+    text-align: center;
+    font-size: 0.82rem;
+    color: var(--danger);
+    margin-top: 10px;
+    min-height: 1.3em;
+    transition: var(--transition);
+}
+
+/* ==========================================
+   بطاقة النتيجة
+   ========================================== */
+.result-card {
+    display: none;
+    background: var(--bg-card);
+    backdrop-filter: blur(24px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.result-card.visible {
+    display: block;
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.result-inner {
+    display: flex;
+    gap: 20px;
+    padding: 20px;
+}
+
+/* الصورة المصغرة */
+.preview-section {
+    flex-shrink: 0;
+    width: 200px;
+}
+
+.thumb-wrapper {
+    position: relative;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    aspect-ratio: 16/9;
+    cursor: pointer;
+}
+
+.video-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+}
+
+.thumb-wrapper:hover .video-thumb {
+    transform: scale(1.05);
+}
+
+.thumb-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.35);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.thumb-wrapper:hover .thumb-overlay {
+    opacity: 1;
+}
+
+.thumb-overlay svg {
+    width: 40px;
+    height: 40px;
+    color: white;
+    filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5));
+}
+
+/* التفاصيل */
+.details-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 16px;
+    min-width: 0;
+}
+
+.video-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: var(--radius-xs);
+    font-family: inherit;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.action-btn svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.action-stream {
+    background: var(--gradient);
+    color: white;
+}
+
+.action-stream:hover {
+    box-shadow: 0 4px 20px rgba(168, 85, 247, 0.4);
+    transform: translateY(-1px);
+}
+
+.action-download {
+    background: rgba(255,255,255,0.08);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.action-download:hover {
+    background: rgba(255,255,255,0.14);
+    transform: translateY(-1px);
+}
+
+/* مشغل الفيديو */
+.player-section {
+    display: none;
+    padding: 0 20px 20px;
+}
+
+.player-section.visible {
+    display: block;
+    animation: fadeIn 0.4s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.player-section video {
+    width: 100%;
+    border-radius: var(--radius-sm);
+    background: #000;
+    max-height: 400px;
+}
+
+/* ==========================================
+   رسالة الخطأ
+   ========================================== */
+.error-toast {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 24px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    backdrop-filter: blur(16px);
+    border-radius: var(--radius-sm);
+    color: #fca5a5;
+    font-size: 0.9rem;
+    font-weight: 500;
+    z-index: 1000;
+    opacity: 0;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: none;
+}
+
+.error-toast svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    color: var(--danger);
+}
+
+.error-toast.visible {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ==========================================
+   الفوتر
+   ========================================== */
+.footer {
+    position: relative;
+    z-index: 5;
+    text-align: center;
+    padding: 24px;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    border-top: 1px solid var(--border);
+}
+
+/* ==========================================
+   التجاوب (Responsive)
+   ========================================== */
+@media (max-width: 640px) {
+    .header {
+        padding: 16px 20px;
+    }
+
+    .result-inner {
+        flex-direction: column;
+    }
+
+    .preview-section {
+        width: 100%;
+    }
+
+    .fetch-btn {
+        padding: 0 18px;
+        font-size: 0.85rem;
+    }
+
+    .action-buttons {
+        flex-direction: column;
+    }
+
+    .action-btn {
+        justify-content: center;
+    }
+}

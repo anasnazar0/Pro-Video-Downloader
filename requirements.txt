@@ -3,3 +3,6 @@ gunicorn
 imageio-ffmpeg
 yt-dlp
 requests
+waitress
+
+

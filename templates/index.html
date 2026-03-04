@@ -3,624 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VidFetch — محمّل الفيديو الذكي</title>
+    <meta name="description" content="VidFetch — حمّل فيديوهات من يوتيوب وتيك توك وانستغرام بأعلى جودة مجاناً">
+    <title>VidFetch — تحميل الفيديوهات</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=IBM+Plex+Mono:wght@400;600&family=Noto+Kufi+Arabic:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg:      #080810;
-            --surface: #10101A;
-            --s2:      #18182A;
-            --border:  #252538;
-            --accent:  #7C6AFF;
-            --accent2: #FF6A9B;
-            --green:   #00E5A0;
-            --red:     #FF4D6D;
-            --text:    #EEEAF8;
-            --muted:   #6A6680;
-            --glow:    rgba(124,106,255,0.28);
-        }
-
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        html { scroll-behavior: smooth; }
-
-        body {
-            background: var(--bg);
-            color: var(--text);
-            font-family: 'Noto Kufi Arabic', sans-serif;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 40px 16px 80px;
-            overflow-x: hidden;
-        }
-
-        /* grid bg */
-        body::before {
-            content: '';
-            position: fixed; inset: 0;
-            background-image:
-                linear-gradient(rgba(124,106,255,.04) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(124,106,255,.04) 1px, transparent 1px);
-            background-size: 44px 44px;
-            pointer-events: none; z-index: 0;
-        }
-
-        .blob {
-            position: fixed; border-radius: 50%;
-            filter: blur(130px); pointer-events: none; z-index: 0; opacity: .14;
-        }
-        .blob-1 { width:550px;height:550px;background:var(--accent);  top:-180px;right:-120px; }
-        .blob-2 { width:450px;height:450px;background:var(--accent2); bottom:-120px;left:-90px; }
-
-        .wrapper {
-            position: relative; z-index: 1;
-            width: 100%; max-width: 820px;
-            display: flex; flex-direction: column; gap: 32px;
-        }
-
-        /* ── HEADER ── */
-        header { text-align: center; }
-
-        .badge {
-            display: inline-flex; align-items: center; gap: 8px;
-            background: var(--s2); border: 1px solid var(--border);
-            border-radius: 100px; padding: 6px 18px;
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 11px; color: var(--accent);
-            letter-spacing: .1em; text-transform: uppercase;
-            margin-bottom: 22px;
-        }
-        .badge-dot {
-            width: 7px; height: 7px;
-            background: var(--green); border-radius: 50%;
-            animation: blink 2s infinite;
-        }
-        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
-
-        h1 {
-            font-family: 'Syne', sans-serif; font-weight: 800;
-            font-size: clamp(2rem, 6vw, 3.8rem);
-            letter-spacing: -.03em; line-height: 1.05;
-            background: linear-gradient(135deg, #fff 20%, var(--accent) 80%, var(--accent2) 100%);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            background-clip: text; margin-bottom: 12px;
-        }
-        .tagline {
-            color: var(--muted);
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 12px; letter-spacing: .05em;
-        }
-
-        /* ── CARD ── */
-        .card {
-            background: var(--surface); border: 1px solid var(--border);
-            border-radius: 20px; padding: 24px;
-            box-shadow: 0 0 70px rgba(124,106,255,.07),
-                        inset 0 1px 0 rgba(255,255,255,.03);
-        }
-
-        .input-row { display: flex; gap: 10px; margin-bottom: 16px; }
-
-        .input-wrap { flex: 1; position: relative; }
-        .input-icon {
-            position: absolute; left: 14px; top: 50%;
-            transform: translateY(-50%); font-size: 16px;
-            pointer-events: none; opacity: .45;
-        }
-        input[type="text"] {
-            width: 100%; background: var(--s2);
-            border: 1px solid var(--border); border-radius: 12px;
-            color: var(--text); font-family: 'IBM Plex Mono', monospace;
-            font-size: 14px; padding: 14px 14px 14px 40px;
-            outline: none; transition: border-color .2s, box-shadow .2s;
-            direction: ltr;
-        }
-        input[type="text"]::placeholder { color: var(--muted); }
-        input[type="text"]:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(124,106,255,.16);
-        }
-
-        .go-btn {
-            background: linear-gradient(135deg, var(--accent), #9860FF);
-            border: none; border-radius: 12px; color: #fff;
-            font-family: 'Noto Kufi Arabic', sans-serif;
-            font-weight: 700; font-size: 15px;
-            padding: 14px 22px; cursor: pointer; white-space: nowrap;
-            transition: transform .2s, box-shadow .2s, opacity .2s;
-            box-shadow: 0 4px 22px var(--glow); min-width: 120px;
-        }
-        .go-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 30px var(--glow); }
-        .go-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
-
-        /* platforms */
-        .platforms { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-        .pl { font-size: 11px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
-        .ptag {
-            background: var(--s2); border: 1px solid var(--border);
-            border-radius: 7px; padding: 3px 9px;
-            font-size: 11px; color: var(--muted);
-        }
-
-        /* progress */
-        .progress-box {
-            display: none; flex-direction: column; gap: 10px;
-            margin-top: 18px; padding-top: 18px;
-            border-top: 1px solid var(--border);
-        }
-        .prog-row { display: flex; justify-content: space-between; align-items: center; }
-        .prog-lbl { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--accent); }
-        .prog-step { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); }
-        .prog-track { width: 100%; height: 2px; background: var(--border); border-radius: 99px; overflow: hidden; }
-        .prog-fill {
-            height: 100%;
-            background: linear-gradient(90deg, var(--accent), var(--accent2));
-            border-radius: 99px;
-            animation: slide 1.6s ease-in-out infinite;
-        }
-        @keyframes slide {
-            0%   { transform: translateX(-100%); width: 55%; }
-            50%  { transform: translateX(70%);   width: 55%; }
-            100% { transform: translateX(220%);  width: 55%; }
-        }
-
-        /* error */
-        .error-box {
-            display: none; margin-top: 14px;
-            background: rgba(255,77,109,.08);
-            border: 1px solid rgba(255,77,109,.25);
-            border-radius: 12px; padding: 13px 16px;
-            color: #FF8099; font-size: 13px;
-            font-family: 'IBM Plex Mono', monospace; line-height: 1.6;
-        }
-
-        /* ── RESULT ── */
-        #result {
-            display: none; background: var(--surface);
-            border: 1px solid var(--border); border-radius: 20px;
-            overflow: hidden;
-            box-shadow: 0 0 70px rgba(124,106,255,.07);
-            animation: fadeUp .4s cubic-bezier(.16,1,.3,1);
-        }
-        @keyframes fadeUp { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
-
-        /* ── PLAYER ── */
-        .player-wrap {
-            width: 100%; background: #000;
-            position: relative; overflow: hidden;
-            min-height: 200px;
-        }
-        /* YouTube embed: نسبة 16:9 ثابتة */
-        .player-wrap.yt-embed {
-            aspect-ratio: 16 / 9;
-            min-height: unset;
-        }
-        .player-wrap.yt-embed iframe {
-            width: 100%; height: 100%;
-            display: block; border: none;
-        }
-        .player-wrap video {
-            width: 100%; display: block;
-            max-height: 500px; object-fit: contain;
-        }
-
-        .overlay {
-            position: absolute; inset: 0; z-index: 3;
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center; gap: 10px;
-            background: rgba(8,8,16,.86); backdrop-filter: blur(12px);
-            text-align: center; padding: 24px;
-        }
-        .thumb-bg {
-            position: absolute; inset: 0; z-index: 1;
-            background-size: cover; background-position: center;
-            filter: blur(8px) brightness(.3);
-        }
-        .overlay > * { position: relative; z-index: 2; }
-        .ov-icon  { font-size: 48px; line-height: 1; }
-        .ov-title { font-size: 18px; font-weight: 700; color: var(--text); }
-        .ov-sub   { font-size: 13px; color: var(--muted); line-height: 1.6; }
-
-        /* ── INFO ── */
-        .info { padding: 20px 22px 22px; display: flex; flex-direction: column; gap: 16px; }
-
-        .meta-row { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
-
-        .status-pill {
-            flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
-            padding: 4px 12px; border-radius: 100px;
-            font-size: 11px; font-family: 'IBM Plex Mono', monospace;
-            font-weight: 600; letter-spacing: .05em;
-        }
-        .pill-ok  { background: rgba(0,229,160,.1); border: 1px solid rgba(0,229,160,.3); color: var(--green); }
-        .pill-err { background: rgba(255,77,109,.1); border: 1px solid rgba(255,77,109,.3); color: var(--red); }
-        .sdot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-
-        .vtitle {
-            flex: 1; min-width: 0;
-            font-size: 15px; font-weight: 700; line-height: 1.55;
-            color: var(--text); direction: ltr; text-align: left;
-            word-break: break-word;
-        }
-
-        .sep { height: 1px; background: var(--border); margin: 0 -22px; }
-
-        /* ════════════════════════════════
-           ✅ أزرار التحميل — مصلحة بالكامل
-           تظهر دائماً حتى لو الرابط فيديو فقط
-        ════════════════════════════════ */
-        .dl-section {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .dl-label {
-            font-size: 11px;
-            color: var(--muted);
-            font-family: 'IBM Plex Mono', monospace;
-            letter-spacing: .05em;
-        }
-
-        .dl-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-        }
-
-        .dl-btn {
-            display: flex;
-            flex-direction: row;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            padding: 14px 12px;
-            border-radius: 13px;
-            font-family: 'Noto Kufi Arabic', sans-serif;
-            font-size: 14px;
-            font-weight: 700;
-            text-decoration: none;
-            border: 1px solid transparent;
-            transition: transform .2s, box-shadow .2s, opacity .2s;
-            /* ✅ لا نخفي الأزرار أبداً — نعطلها فقط إذا لا يوجد رابط */
-            cursor: pointer;
-        }
-        .dl-btn:hover:not(.disabled) { transform: translateY(-2px); }
-        .dl-btn.disabled {
-            opacity: .35;
-            cursor: not-allowed;
-            pointer-events: none;
-        }
-
-        .btn-hd {
-            background: linear-gradient(135deg, #00C88C, #00E5A0);
-            color: #001C12;
-            box-shadow: 0 4px 18px rgba(0,229,160,.2);
-        }
-        .btn-hd:hover:not(.disabled) { box-shadow: 0 8px 26px rgba(0,229,160,.35); }
-
-        .btn-sd {
-            background: var(--s2);
-            border-color: var(--border);
-            color: var(--text);
-        }
-        .btn-sd:hover:not(.disabled) { background: var(--border); }
-
-        .btn-icon  { font-size: 18px; flex-shrink: 0; }
-        .btn-text  { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
-        .btn-main  { font-size: 13px; font-weight: 700; white-space: nowrap; }
-        .btn-sub   { font-size: 10px; opacity: .65; font-family: 'IBM Plex Mono', monospace; }
-
-        footer {
-            text-align: center; color: var(--muted);
-            font-size: 11px; font-family: 'IBM Plex Mono', monospace;
-        }
-
-        /* ── RESPONSIVE ── */
-        @media (max-width: 520px) {
-            .input-row   { flex-direction: column; }
-            .go-btn      { width: 100%; }
-            /* ✅ على الموبايل: الأزرار عمودية واحدة تحت الأخرى */
-            .dl-grid     { grid-template-columns: 1fr; }
-            .info        { padding: 16px 16px 18px; }
-            .sep         { margin: 0 -16px; }
-            .dl-btn      { padding: 14px 16px; }
-        }
-
-        @media (max-width: 360px) {
-            h1 { font-size: 1.8rem; }
-            .btn-main { font-size: 12px; }
-        }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Kufi+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
 
-<div class="blob blob-1"></div>
-<div class="blob blob-2"></div>
+    <!-- الخلفية المتحركة -->
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+    <div class="bg-glow bg-glow-3"></div>
 
-<div class="wrapper">
-
-    <header>
-        <div class="badge"><span class="badge-dot"></span> VidFetch v2.2 &nbsp;·&nbsp; Online</div>
-        <h1>محمّل الفيديو الذكي</h1>
-        <p class="tagline">// YouTube · TikTok · Instagram · Twitter · +1000 platform</p>
+    <!-- الهيدر -->
+    <header class="header">
+        <div class="logo">
+            <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <span>VidFetch</span>
+        </div>
+        <div class="header-badge">مجاني 100%</div>
     </header>
 
-    <div class="card">
-        <div class="input-row">
-            <div class="input-wrap">
-                <span class="input-icon">🔗</span>
-                <input type="text" id="urlInput"
-                    placeholder="https://www.youtube.com/watch?v=..."
-                    onkeydown="if(event.key==='Enter') fetchVideo()"
-                    autocomplete="off" spellcheck="false">
+    <!-- المحتوى الرئيسي -->
+    <main class="main">
+        <section class="hero">
+            <h1 class="hero-title">حمّل أي فيديو<br><span class="gradient-text">بأعلى جودة</span></h1>
+            <p class="hero-subtitle">يوتيوب • تيك توك • انستغرام — الصق الرابط وانطلق</p>
+        </section>
+
+        <!-- حقل الإدخال -->
+        <div class="input-section">
+            <div class="input-wrapper" id="inputWrapper">
+                <input
+                    type="url"
+                    id="urlInput"
+                    class="url-input"
+                    placeholder="الصق رابط الفيديو هنا..."
+                    autocomplete="off"
+                    spellcheck="false"
+                >
+                <button class="paste-btn" id="pasteBtn" title="لصق من الحافظة">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                </button>
+                <button class="fetch-btn" id="fetchBtn">
+                    <span class="btn-text">جلب الفيديو</span>
+                    <span class="btn-loader" id="btnLoader"></span>
+                </button>
             </div>
-            <button class="go-btn" id="goBtn" onclick="fetchVideo()">
-                <span id="btnText">⚡ معالجة</span>
-            </button>
+            <p class="input-hint" id="inputHint"></p>
         </div>
 
-        <div class="platforms">
-            <span class="pl">يدعم :</span>
-            <span class="ptag">YouTube</span>
-            <span class="ptag">TikTok</span>
-            <span class="ptag">Instagram</span>
-            <span class="ptag">Twitter/X</span>
-            <span class="ptag">Facebook</span>
-            <span class="ptag">+1000</span>
-        </div>
-
-        <div class="progress-box" id="progressBox">
-            <div class="prog-row">
-                <span class="prog-lbl"  id="progLbl">⏳ جاري المعالجة...</span>
-                <span class="prog-step" id="progStep">1 / 4</span>
-            </div>
-            <div class="prog-track"><div class="prog-fill"></div></div>
-        </div>
-
-        <div class="error-box" id="errorBox"></div>
-    </div>
-
-    <div id="result">
-
-        <div class="player-wrap" id="playerWrap"></div>
-
-        <div class="info">
-            <div class="meta-row">
-                <div class="status-pill pill-ok" id="pill">
-                    <span class="sdot"></span>
-                    <span id="pillTxt">جاهز للبث</span>
+        <!-- بطاقة نتيجة الفيديو -->
+        <div class="result-card" id="resultCard">
+            <div class="result-inner">
+                <!-- المعاينة -->
+                <div class="preview-section">
+                    <div class="thumb-wrapper">
+                        <img id="videoThumb" class="video-thumb" src="" alt="صورة الفيديو">
+                        <div class="thumb-overlay">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        </div>
+                    </div>
                 </div>
-                <div class="vtitle" id="vtitle"></div>
-            </div>
 
-            <div class="sep"></div>
+                <!-- التفاصيل -->
+                <div class="details-section">
+                    <h2 class="video-title" id="videoTitle"></h2>
 
-            <!-- ✅ أزرار التحميل — تظهر دائماً -->
-            <div class="dl-section">
-                <span class="dl-label">روابط التحميل المباشر</span>
-                <div class="dl-grid">
-                    <a id="btnHigh" href="#" class="dl-btn btn-hd" target="_blank" rel="noopener noreferrer">
-                        <span class="btn-icon">⬇️</span>
-                        <span class="btn-text">
-                            <span class="btn-main">جودة عالية</span>
-                            <span class="btn-sub">best quality</span>
-                        </span>
-                    </a>
-                    <a id="btnLow" href="#" class="dl-btn btn-sd" target="_blank" rel="noopener noreferrer">
-                        <span class="btn-icon">📥</span>
-                        <span class="btn-text">
-                            <span class="btn-main">جودة عادية</span>
-                            <span class="btn-sub">standard quality</span>
-                        </span>
-                    </a>
+                    <div class="action-buttons">
+                        <button class="action-btn action-stream" id="streamBtn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            تشغيل مباشر
+                        </button>
+                        <a class="action-btn action-download" id="downloadBtn" href="#" download>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            تحميل
+                        </a>
+                    </div>
                 </div>
             </div>
+
+            <!-- مشغل الفيديو -->
+            <div class="player-section" id="playerSection">
+                <video id="videoPlayer" controls playsinline preload="metadata"></video>
+            </div>
         </div>
 
-    </div>
+        <!-- رسالة الخطأ -->
+        <div class="error-toast" id="errorToast">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            <span id="errorMessage"></span>
+        </div>
+    </main>
 
-    <footer>VidFetch · yt-dlp &amp; Flask · Render Cloud</footer>
-</div>
+    <!-- الفوتر -->
+    <footer class="footer">
+        <p>VidFetch &copy; 2026 — صُنع بـ ❤️</p>
+    </footer>
 
-<script>
-    const STEPS = [
-        ["⏳ جاري استخراج معلومات الفيديو...", "1 / 4"],
-        ["📡 جاري تحليل الصيغ المتاحة...",     "2 / 4"],
-        ["⬇️ جاري تحميل الفيديو على السيرفر...", "3 / 4"],
-        ["🔧 جاري دمج الفيديو والصوت...",       "4 / 4"],
-    ];
-    let timer = null, si = 0;
-
-    function startProg() {
-        si = 0; setStep(0);
-        document.getElementById('progressBox').style.display = 'flex';
-        timer = setInterval(() => { si = Math.min(si+1, STEPS.length-1); setStep(si); }, 5000);
-    }
-    function setStep(i) {
-        document.getElementById('progLbl').textContent  = STEPS[i][0];
-        document.getElementById('progStep').textContent = STEPS[i][1];
-    }
-    function stopProg() {
-        clearInterval(timer);
-        document.getElementById('progressBox').style.display = 'none';
-    }
-    function showErr(msg) {
-        const b = document.getElementById('errorBox');
-        b.innerHTML = '<strong>⚠️ خطأ:</strong> ' + msg;
-        b.style.display = 'block';
-        b.scrollIntoView({ behavior:'smooth', block:'nearest' });
-    }
-    function hideErr() { document.getElementById('errorBox').style.display = 'none'; }
-
-    function esc(s) {
-        return String(s||'')
-            .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
-            .replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    }
-
-    function buildPlayer(src, thumb) {
-        const wrap = document.getElementById('playerWrap');
-        wrap.className = 'player-wrap';
-        wrap.innerHTML = `
-            <video id="vid" controls autoplay muted playsinline preload="metadata"
-                poster="${esc(thumb)}"
-                style="width:100%;display:block;max-height:500px;object-fit:contain;background:#000">
-                <source src="${esc(src)}" type="video/mp4">
-            </video>`;
-
-        const vid = document.getElementById('vid');
-        vid.addEventListener('loadedmetadata', () => {
-            if (vid.videoWidth && vid.videoHeight) {
-                const ratio = vid.videoHeight / vid.videoWidth;
-                const ideal = Math.round(wrap.offsetWidth * ratio);
-                wrap.style.height = Math.min(ideal, 500) + 'px';
-            }
-        });
-        vid.addEventListener('error', () => {
-            showOverlay(wrap, thumb, '⚠️', 'تعذّر تشغيل الفيديو', 'استخدم أزرار التحميل أدناه');
-            setPill(false);
-        });
-    }
-
-    // ✅ YouTube embed — يعرض الفيديو مباشرة بدون تحميل
-    function buildYouTubeEmbed(embedUrl) {
-        const wrap = document.getElementById('playerWrap');
-        wrap.className = 'player-wrap yt-embed';
-        wrap.innerHTML = `
-            <iframe
-                src="${esc(embedUrl)}"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowfullscreen
-                loading="lazy">
-            </iframe>`;
-    }
-
-    function buildNoStream(thumb) {
-        const wrap = document.getElementById('playerWrap');
-        wrap.className = 'player-wrap';
-        wrap.style.height = '240px';
-        showOverlay(wrap, thumb, '📥', 'البث غير متاح', 'استخدم أزرار التحميل أدناه');
-    }
-
-    function showOverlay(wrap, thumb, icon, title, sub) {
-        const old = wrap.querySelector('.overlay');
-        if (old) old.remove();
-        const d = document.createElement('div');
-        d.className = 'overlay';
-        d.innerHTML = `
-            <div class="thumb-bg" style="background-image:url('${esc(thumb)}')"></div>
-            <div class="ov-icon">${icon}</div>
-            <div class="ov-title">${title}</div>
-            <div class="ov-sub">${sub}</div>`;
-        wrap.appendChild(d);
-    }
-
-    function setPill(ok) {
-        const p = document.getElementById('pill');
-        const t = document.getElementById('pillTxt');
-        p.className = 'status-pill ' + (ok ? 'pill-ok' : 'pill-err');
-        t.textContent = ok ? 'جاهز للبث' : 'تحميل مباشر فقط';
-    }
-
-    // ✅ الدالة الرئيسية لضبط أزرار التحميل
-    function setDownloadButtons(highUrl, lowUrl) {
-        const btnH = document.getElementById('btnHigh');
-        const btnL = document.getElementById('btnLow');
-
-        // الزر الأخضر (جودة عالية)
-        if (highUrl) {
-            btnH.href = highUrl;
-            btnH.classList.remove('disabled');
-        } else {
-            btnH.href = '#';
-            btnH.classList.add('disabled');
-        }
-
-        // الزر الرمادي (جودة عادية)
-        if (lowUrl) {
-            btnL.href = lowUrl;
-            btnL.classList.remove('disabled');
-        } else {
-            btnL.href = '#';
-            btnL.classList.add('disabled');
-        }
-
-        // ✅ الأزرار تظهر دائماً — لا نخفيها أبداً
-        btnH.style.display = 'flex';
-        btnL.style.display = 'flex';
-    }
-
-    async function fetchVideo() {
-        const url = document.getElementById('urlInput').value.trim();
-        const btn = document.getElementById('goBtn');
-        const res = document.getElementById('result');
-
-        if (!url) { showErr("الرجاء إدخال رابط صالح."); return; }
-
-        hideErr();
-        res.style.display = 'none';
-        btn.disabled = true;
-        document.getElementById('btnText').textContent = '⏳ جاري...';
-        startProg();
-
-        try {
-            const r = await fetch('/download', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url }),
-            });
-
-            const raw = await r.text();
-            let data;
-            try { data = JSON.parse(raw); }
-            catch { throw new Error("استجابة غير صالحة: " + raw.slice(0, 100)); }
-
-            if (!r.ok || data.error) throw new Error(data.error || "فشلت العملية.");
-
-            stopProg();
-
-            const thumb = data.thumbnail || 'https://img.icons8.com/color/96/video.png';
-            document.getElementById('vtitle').textContent = data.title || 'فيديو';
-
-            // ── المشغل ──
-            if (data.preview_type === 'youtube_embed') {
-                // ✅ YouTube: عرض مباشر عبر iframe
-                buildYouTubeEmbed(data.embed_url);
-                const p = document.getElementById('pill');
-                p.className = 'status-pill pill-ok';
-                document.getElementById('pillTxt').textContent = '▶ YouTube';
-                // أزرار التحميل تفتح YouTube مباشرة
-                const btnH = document.getElementById('btnHigh');
-                const btnL = document.getElementById('btnLow');
-                btnH.querySelector('.btn-main').textContent = 'فتح على YouTube';
-                btnH.querySelector('.btn-sub').textContent  = 'youtube.com';
-                btnL.querySelector('.btn-main').textContent = 'رابط مختصر';
-                btnL.querySelector('.btn-sub').textContent  = 'youtu.be';
-                setDownloadButtons(data.download_url_high, data.download_url_low);
-            } else if (data.preview_type === 'video' && data.stream_url) {
-                buildPlayer(data.stream_url, thumb);
-                setPill(true);
-                setDownloadButtons(data.download_url_high, data.download_url_low);
-            } else {
-                buildNoStream(thumb);
-                setPill(false);
-                setDownloadButtons(data.download_url_high, data.download_url_low);
-            }
-
-            res.style.display = 'block';
-            res.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-        } catch (err) {
-            stopProg();
-            showErr(err.message);
-        } finally {
-            btn.disabled = false;
-            document.getElementById('btnText').textContent = '⚡ معالجة';
-        }
-    }
-</script>
+    <script src="/static/js/app.js"></script>
 </body>
 </html>

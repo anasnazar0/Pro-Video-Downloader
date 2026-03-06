@@ -127,7 +127,15 @@ def download():
 
     ydl_opts = {
         # Broad format fallback: prefer mp4 streams → any merged → single best
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+        "format": (
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[ext=mp4]+bestaudio/"
+            "bestvideo+bestaudio/"
+            "best[ext=mp4]/"
+            "best"
+        ),
+        # Prioritize H.264 video codec to prevent "Missing HEVC Codec" errors
+        "format_sort": ["vcodec:h264"],
         "outtmpl": temp_template,
         "merge_output_format": "mp4",
         "quiet": True,
@@ -141,6 +149,13 @@ def download():
         
         # إضافة ملف الكوكيز لتخطي حظر يوتيوب (يجب رفع ملف cookies.txt للمشروع)
         "cookiefile": "cookies.txt" if os.path.exists("cookies.txt") else None,
+        
+        # YouTube-specific: use multiple clients to bypass bot checks
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web", "ios"],
+            },
+        },
     }
 
     try:

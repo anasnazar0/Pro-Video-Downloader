@@ -1,18 +1,27 @@
-# استخدام بيئة بايثون خفيفة
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-# تحديث النظام وتثبيت FFmpeg الأساسي من جذور النظام لضمان عمل يوتيوب
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+# منع بايثون من كتابة ملفات التخزين المؤقت وتفعيل إخراج السجلات فوراً
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-# تحديد مجلد العمل
+# تثبيت FFmpeg
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg curl && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# نسخ ملف المكتبات وتثبيته بشكل نظيف (بدون أخطاء buildCommand)
+# تثبيت المكتبات
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# نسخ باقي ملفات المشروع (مثل app.py و index.html)
+# نسخ باقي الملفات
 COPY . .
 
-# أمر تشغيل السيرفر
-CMD ["gunicorn", "-b", "0.0.0.0:5000", "app:app"]
+# إنشاء مجلد التنزيلات وإعطائه صلاحيات الكتابة الكاملة لتجنب أي توقف
+RUN mkdir -p downloads && chmod 777 downloads
+
+# (تم حذف ENV PORT=5000 و EXPOSE لكي نترك Render تتحكم بالمنفذ ديناميكياً)
+
+# تشغيل السيرفر
+CMD ["python", "app.py"]

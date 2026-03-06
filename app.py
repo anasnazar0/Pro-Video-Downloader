@@ -1,197 +1,220 @@
-import os, re, uuid, time, subprocess, sys, json
-import urllib.request
-from flask import Flask, render_template, request, jsonify, send_file, abort
-import yt_dlp, imageio_ffmpeg
+import os
+import re
+import time
+import uuid
 import threading
-import importlib
+import logging
+from pathlib import Path
 
-# ==========================================
-# 1. نظام التحديث التلقائي
-# ==========================================
-def update_and_reload_ytdlp():
-    try:
-        subprocess.run([sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "-q"],
-                       capture_output=True, text=True, timeout=120)
-        importlib.reload(yt_dlp)
-    except Exception as e:
-        pass
+from flask import Flask, request, jsonify, send_file, render_template
+import yt_dlp
+import imageio_ffmpeg
 
-def background_updater():
-    while True:
-        time.sleep(43200) # كل 12 ساعة
-        update_and_reload_ytdlp()
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+DOWNLOAD_DIR = Path(__file__).parent / "downloads"
+DOWNLOAD_DIR.mkdir(exist_ok=True)
 
-update_and_reload_ytdlp()
-threading.Thread(target=background_updater, daemon=True).start()
-
-# ==========================================
-# 2. إعدادات السيرفر
-# ==========================================
-app = Flask(__name__)
-DOWNLOAD_FOLDER = "downloads"
-os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+MAX_AGE_SECONDS = 2 * 60 * 60          # 2 hours
+CLEANUP_INTERVAL_SECONDS = 10 * 60     # 10 minutes
 
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
-COOKIES = "cookies.txt" if os.path.exists("cookies.txt") else None
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-# ==========================================
-# 3. دوال المنصات والتنظيف
-# ==========================================
-def is_youtube(url):   return "youtube.com" in url or "youtu.be" in url
-def is_tiktok(url):    return "tiktok.com" in url
-def is_instagram(url): return "instagram.com" in url
+app = Flask(__name__)
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
 
-def extract_yt_id(url):
-    m = re.search(r"(?:v=|youtu\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})", url)
-    return m.group(1) if m else None
+# ---------------------------------------------------------------------------
+# Background cleanup daemon
+# ---------------------------------------------------------------------------
 
-def find_file(file_id):
-    for f in os.listdir(DOWNLOAD_FOLDER):
-        if f.startswith(file_id) and f.endswith(".mp4"):
-            return f
-    for f in os.listdir(DOWNLOAD_FOLDER):
-        if f.startswith(file_id):
-            return f
-    return None
+def _cleanup_loop():
+    """Permanently delete files in downloads/ older than MAX_AGE_SECONDS."""
+    while True:
+        try:
+            now = time.time()
+            for p in DOWNLOAD_DIR.iterdir():
+                if p.is_file() and (now - p.stat().st_mtime) > MAX_AGE_SECONDS:
+                    p.unlink(missing_ok=True)
+                    logger.info("Cleanup: deleted %s", p.name)
+        except Exception as exc:
+            logger.warning("Cleanup error: %s", exc)
+        time.sleep(CLEANUP_INTERVAL_SECONDS)
 
-def cleanup_old_files():
-    try:
-        now = time.time()
-        for f in os.listdir(DOWNLOAD_FOLDER):
-            p = os.path.join(DOWNLOAD_FOLDER, f)
-            if os.path.isfile(p) and now - os.path.getmtime(p) > 7200:
-                os.remove(p)
-    except Exception:
-        pass
 
-# ==========================================
-# 4. بناء الإعدادات (هنا تم حل مشكلة الدمج والعرض 🚀)
-# ==========================================
-def build_opts(url, filepath=None):
-    opts = {
-        "quiet":              True,
-        "no_warnings":        True,
-        "nocheckcertificate": True,
-        "check_formats":      False,
-        "http_headers": {
-            "User-Agent": USER_AGENT,
-            "Accept-Language": "en-US,en;q=0.9",
-        },
-    }
+threading.Thread(target=_cleanup_loop, daemon=True).start()
 
-    if COOKIES:
-        opts["cookiefile"] = COOKIES
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    if is_youtube(url):
-        opts["extractor_args"] = {"youtube": {"player_client": ["tv_embedded", "ios", "android", "mweb"]}}
-        opts["geo_bypass"] = True
-    elif is_tiktok(url):
-        opts["http_headers"]["Referer"] = "https://www.tiktok.com/"
-    elif is_instagram(url):
-        opts["http_headers"]["Referer"] = "https://www.instagram.com/"
+_SAFE = re.compile(r'[^A-Za-z0-9_\-.]')
 
-    if filepath:
-        # ✅ 1. إجبار الأداة على سحب صيغ متوافقة مع الويب لضمان نجاح الدمج
-        fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-        
-        opts.update({
-            "ffmpeg_location":     FFMPEG_PATH,
-            "format":              fmt,
-            "outtmpl":             filepath,
-            "merge_output_format": "mp4",
-            
-            # ✅ 2. السر السحري: نقل بيانات الـ MOOV للبداية ليعمل الفيديو فوراً في المتصفح
-            "postprocessor_args": [
-                '-movflags', '+faststart'
-            ],
-            
-            "retries":             3,
-            "fragment_retries":    3,
-        })
 
-    return opts
+def _safe_filename(title: str, ext: str = "mp4") -> str:
+    """Return a filesystem-safe filename with a short UUID suffix."""
+    base = _SAFE.sub("_", title)[:80]
+    short_id = uuid.uuid4().hex[:8]
+    return f"{base}_{short_id}.{ext}"
 
-# ==========================================
-# 5. مسارات الواجهة والتحميل
-# ==========================================
+
+def _remux_to_mp4(src: str, dst: str):
+    """Re-mux *src* into an mp4 container with faststart using FFmpeg."""
+    import subprocess
+    cmd = [
+        FFMPEG_PATH,
+        "-y",
+        "-i", src,
+        "-c", "copy",
+        "-movflags", "+faststart",
+        dst,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    if result.returncode != 0:
+        raise RuntimeError(f"FFmpeg failed: {result.stderr[-500:]}")
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
 @app.route("/")
 def index():
     return render_template("index.html")
 
+
 @app.route("/download", methods=["POST"])
 def download():
-    cleanup_old_files()
-    
-    body = request.get_json()
-    if not body or not body.get("url"):
-        return jsonify({"error": "الرجاء إرسال رابط صحيح."}), 400
-        
-    url = body["url"].strip()
+    data = request.get_json(silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "No URL provided."}), 400
 
-    file_id = str(uuid.uuid4())
-    fpath   = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
-    
-    title     = "VidFetch Video"
-    thumbnail = "https://img.icons8.com/color/96/000000/video.png"
-    
+    # Unique temp name to avoid collisions
+    temp_id = uuid.uuid4().hex[:10]
+    temp_template = str(DOWNLOAD_DIR / f"tmp_{temp_id}.%(ext)s")
+
+    ydl_opts = {
+        # Broad format fallback: prefer mp4 streams → any merged → single best
+        "format": (
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[ext=mp4]+bestaudio/"
+            "bestvideo+bestaudio/"
+            "best[ext=mp4]/"
+            "best"
+        ),
+        "outtmpl": temp_template,
+        "merge_output_format": "mp4",
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "socket_timeout": 30,
+        "retries": 5,
+        "fragment_retries": 5,
+        "http_chunk_size": 10485760,           # 10 MB chunks
+        "ffmpeg_location": FFMPEG_PATH,
+        # Pretend to be a real browser
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        # YouTube-specific: use the web client for better compatibility
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web"],
+            },
+        },
+    }
+
     try:
-        with yt_dlp.YoutubeDL(build_opts(url)) as ydl:
-            info      = ydl.extract_info(url, download=False)
-            title     = info.get("title", title)
-            thumbnail = info.get("thumbnail", thumbnail)
-    except Exception as e:
-        print(f"[Extraction Error] {e}")
-        
-    try:
-        # التحميل والدمج مع faststart
-        with yt_dlp.YoutubeDL(build_opts(url, fpath)) as ydl:
-            ydl.download([url])
-            
-        sf = find_file(file_id)
-        if not sf:
-            raise FileNotFoundError("تعذر العثور على الملف.")
-            
-        return jsonify({
-            "title":             title,
-            "thumbnail":         thumbnail,
-            "preview_type":      "video",
-            "stream_url":        f"/stream/{sf}",
-            "download_url_high": f"/stream/{sf}?dl=1",
-            "download_url_low":  f"/stream/{sf}?dl=1",
-        })
-        
-    except yt_dlp.utils.DownloadError as e:
-        msg = str(e)
-        if "403" in msg: err = "المنصة رفضت الطلب (403 Forbidden)."
-        elif "Private" in msg: err = "هذا المحتوى خاص."
-        else: err = "فشل التحميل، الرابط غير مدعوم أو محمي."
-        return jsonify({"error": err}), 500
-    except Exception as e:
-        return jsonify({"error": "حدث خطأ داخلي في السيرفر أثناء المعالجة."}), 500
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            title = info.get("title", "video") or "video"
+            duration = info.get("duration")
+
+            # yt-dlp may produce the file with the final ext already
+            # Find the downloaded file
+            downloaded = None
+            for p in DOWNLOAD_DIR.iterdir():
+                if p.name.startswith(f"tmp_{temp_id}"):
+                    downloaded = p
+                    break
+
+            if downloaded is None:
+                return jsonify({"error": "Download succeeded but file not found."}), 500
+
+            # Build final safe filename
+            final_name = _safe_filename(title)
+            final_path = DOWNLOAD_DIR / final_name
+
+            # Remux into mp4 with faststart if not already a proper mp4
+            if downloaded.suffix.lower() != ".mp4":
+                _remux_to_mp4(str(downloaded), str(final_path))
+                downloaded.unlink(missing_ok=True)
+            else:
+                # Even if mp4, re-mux to ensure faststart flag
+                _remux_to_mp4(str(downloaded), str(final_path))
+                downloaded.unlink(missing_ok=True)
+
+            size_mb = round(final_path.stat().st_size / (1024 * 1024), 2)
+
+            return jsonify({
+                "filename": final_name,
+                "title": title,
+                "duration": duration,
+                "size_mb": size_mb,
+            })
+
+    except yt_dlp.utils.DownloadError as exc:
+        msg = str(exc)
+        if "403" in msg or "Forbidden" in msg:
+            return jsonify({"error": "Access forbidden (403). The video may be private or geo-restricted."}), 403
+        if "404" in msg or "not found" in msg.lower():
+            return jsonify({"error": "Video not found (404). Please check the URL."}), 404
+        return jsonify({"error": f"Download failed: {msg}"}), 500
+    except Exception as exc:
+        logger.exception("Unexpected error during download")
+        return jsonify({"error": f"An unexpected error occurred: {exc}"}), 500
 
 
-# ==========================================
-# 6. نظام البث الاحترافي (Streaming)
-# ==========================================
 @app.route("/stream/<filename>")
-def stream_video(filename):
-    """نظام بث متقدم باستخدام أدوات Flask المدمجة لدعم التقديم والتأخير"""
-    filename = os.path.basename(filename)
-    path     = os.path.join(DOWNLOAD_FOLDER, filename)
-    force_dl = request.args.get("dl") == "1"
+def stream(filename):
+    # Sanitize – prevent directory traversal
+    safe = Path(filename).name
+    filepath = DOWNLOAD_DIR / safe
 
-    if not os.path.exists(path):
-        abort(404)
+    if not filepath.exists():
+        return jsonify({"error": "File not found."}), 404
 
-    # ✅ استخدام send_file مع conditional=True يحل جميع مشاكل مشغل الفيديو في المتصفحات
+    as_dl = request.args.get("dl") == "1"
     return send_file(
-        path,
-        as_attachment=force_dl,
-        download_name="VidFetch_Video.mp4" if force_dl else None,
+        filepath,
         mimetype="video/mp4",
-        conditional=True # هذا يفعل دعم الـ 206 Partial Content أوتوماتيكياً
+        as_attachment=as_dl,
+        download_name=safe,
+        conditional=True,
     )
 
+# ---------------------------------------------------------------------------
+# Entrypoint – Waitress in production, Flask dev server locally
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    logger.info("Starting server on port %d …", port)
+
+    if os.environ.get("RENDER"):
+        from waitress import serve
+        serve(app, host="0.0.0.0", port=port, threads=4)
+    else:
+        # Local development – also use waitress for consistency
+        try:
+            from waitress import serve
+            serve(app, host="0.0.0.0", port=port, threads=4)
+        except ImportError:
+            app.run(host="0.0.0.0", port=port, debug=True)

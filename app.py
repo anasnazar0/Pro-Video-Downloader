@@ -8,7 +8,6 @@ from pathlib import Path
 
 from flask import Flask, request, jsonify, send_file, render_template
 import yt_dlp
-from yt_dlp.networking.impersonate import ImpersonateTarget
 import imageio_ffmpeg
 
 # ---------------------------------------------------------------------------
@@ -147,13 +146,14 @@ def download():
         "fragment_retries": 5,
         "http_chunk_size": 10485760,           # 10 MB chunks
         "ffmpeg_location": FFMPEG_PATH,
-        # Pretend to be a real browser (TLS impersonation via curl_cffi for TikTok etc)
-        "impersonate": ImpersonateTarget(client="chrome"),
-        # YouTube-specific: use android_vr client (no JS runtime needed)
+        
+        # إضافة ملف الكوكيز لتخطي حظر يوتيوب (يجب رفع ملف cookies.txt للمشروع)
+        "cookiefile": "cookies.txt" if os.path.exists("cookies.txt") else None,
+        
+        # YouTube-specific: use multiple clients to bypass bot checks
         "extractor_args": {
             "youtube": {
-                "player_client": ["android_vr"],
-                "skip": ["js"],
+                "player_client": ["android", "web", "ios"],
             },
         },
     }

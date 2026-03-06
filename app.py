@@ -8,6 +8,7 @@ from pathlib import Path
 
 from flask import Flask, request, jsonify, send_file, render_template
 import yt_dlp
+from yt_dlp.networking.impersonate import ImpersonateTarget
 import imageio_ffmpeg
 
 # ---------------------------------------------------------------------------
@@ -60,20 +61,50 @@ def _safe_filename(title: str, ext: str = "mp4") -> str:
     return f"{base}_{short_id}.{ext}"
 
 
-def _remux_to_mp4(src: str, dst: str):
-    """Re-mux *src* into an mp4 container with faststart using FFmpeg."""
+def _requires_transcode(filepath: str) -> bool:
+    """Run FFmpeg to check the actual video codec. Return True if it is NOT H.264."""
+    import subprocess
+    # ffmpeg -i returns 1 because no output file is specified, but prints info to stderr
+    result = subprocess.run([FFMPEG_PATH, "-i", filepath], capture_output=True, text=True)
+    stderr = result.stderr.lower()
+    
+    # Simple check for stream info
+    if "video: hevc" in stderr or "video: vp9" in stderr or "video: av1" in stderr:
+        return True
+    
+    # If it explicitly says h264, we don't need to transcode
+    if "video: h264" in stderr or "video: avc" in stderr:
+        return False
+        
+    # Default to transcoding if unknown to be safe
+    return True
+
+
+def _remux_to_mp4(src: str, dst: str, force_transcode: bool = False):
+    """Re-mux *src* into an mp4 container with faststart, and optionally transcode video to h264."""
     import subprocess
     cmd = [
         FFMPEG_PATH,
         "-y",
         "-i", src,
-        "-c", "copy",
-        "-movflags", "+faststart",
-        dst,
     ]
+    if force_transcode:
+        # Transcode video to H.264 (AVC) for maximum browser/player compatibility, but keep audio logic simple
+        cmd.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-c:a", "aac"])
+    else:
+        # Fast copy
+        cmd.extend(["-c", "copy"])
+
+    cmd.extend(["-movflags", "+faststart", dst])
+    import logging
+    logging.getLogger("streamvault").info("FFmpeg running: %s", " ".join(cmd))
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        
     if result.returncode != 0:
+        logging.getLogger("streamvault").error("FFmpeg error: %s", result.stderr)
         raise RuntimeError(f"FFmpeg failed: {result.stderr[-500:]}")
+    else:
+        logging.getLogger("streamvault").info("FFmpeg success. force_transcode=%s", force_transcode)
 
 # ---------------------------------------------------------------------------
 # Routes
@@ -96,6 +127,7 @@ def download():
     temp_template = str(DOWNLOAD_DIR / f"tmp_{temp_id}.%(ext)s")
 
     ydl_opts = {
+        # Broad format fallback: prefer mp4 streams → any merged → single best
         "format": (
             "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
             "bestvideo[ext=mp4]+bestaudio/"
@@ -103,6 +135,7 @@ def download():
             "best[ext=mp4]/"
             "best"
         ),
+        # Prioritize H.264 video codec to prevent "Missing HEVC Codec" errors
         "format_sort": ["vcodec:h264"],
         "outtmpl": temp_template,
         "merge_output_format": "mp4",
@@ -112,16 +145,15 @@ def download():
         "socket_timeout": 30,
         "retries": 5,
         "fragment_retries": 5,
-        "http_chunk_size": 10485760,
+        "http_chunk_size": 10485760,           # 10 MB chunks
         "ffmpeg_location": FFMPEG_PATH,
-        # إضافة الكوكيز لتخطي حظر يوتيوب (Bot Protection)
-        "cookiefile": "cookies.txt" if os.path.exists("cookies.txt") else None,
-        
+        # Pretend to be a real browser (TLS impersonation via curl_cffi for TikTok etc)
         "impersonate": ImpersonateTarget(client="chrome"),
+        # YouTube-specific: use android_vr client (no JS runtime needed)
         "extractor_args": {
             "youtube": {
-                # استخدام عملاء متعددين لتجاوز الحماية
-                "player_client": ["android", "web", "ios"], 
+                "player_client": ["android_vr"],
+                "skip": ["js"],
             },
         },
     }
@@ -129,7 +161,9 @@ def download():
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            title = info.get("title", "video") or "video"
+            raw_title = info.get("title", "video") or "video"
+            # Strip problematic unicode chars (like TikTok emojis) that can crash the response
+            title = raw_title.encode("utf-8", "ignore").decode("utf-8")
             duration = info.get("duration")
 
             # yt-dlp may produce the file with the final ext already
@@ -147,13 +181,16 @@ def download():
             final_name = _safe_filename(title)
             final_path = DOWNLOAD_DIR / final_name
 
-            # Remux into mp4 with faststart if not already a proper mp4
-            if downloaded.suffix.lower() != ".mp4":
-                _remux_to_mp4(str(downloaded), str(final_path))
+            # Detect actual codec by probing the file with FFmpeg, bypassing buggy yt-dlp metadata
+            needs_transcode = _requires_transcode(str(downloaded))
+
+            # Remux into mp4 with faststart, and transcode if necessary
+            if downloaded.suffix.lower() != ".mp4" or needs_transcode:
+                _remux_to_mp4(str(downloaded), str(final_path), force_transcode=needs_transcode)
                 downloaded.unlink(missing_ok=True)
             else:
-                # Even if mp4, re-mux to ensure faststart flag
-                _remux_to_mp4(str(downloaded), str(final_path))
+                # Even if mp4 and h264, re-mux to ensure faststart flag (web optimized)
+                _remux_to_mp4(str(downloaded), str(final_path), force_transcode=False)
                 downloaded.unlink(missing_ok=True)
 
             size_mb = round(final_path.stat().st_size / (1024 * 1024), 2)
@@ -213,4 +250,3 @@ if __name__ == "__main__":
             serve(app, host="0.0.0.0", port=port, threads=4)
         except ImportError:
             app.run(host="0.0.0.0", port=port, debug=True)
-

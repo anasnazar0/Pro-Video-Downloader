@@ -96,7 +96,6 @@ def download():
     temp_template = str(DOWNLOAD_DIR / f"tmp_{temp_id}.%(ext)s")
 
     ydl_opts = {
-        # Broad format fallback: prefer mp4 streams → any merged → single best
         "format": (
             "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
             "bestvideo[ext=mp4]+bestaudio/"
@@ -104,6 +103,7 @@ def download():
             "best[ext=mp4]/"
             "best"
         ),
+        "format_sort": ["vcodec:h264"],
         "outtmpl": temp_template,
         "merge_output_format": "mp4",
         "quiet": True,
@@ -112,21 +112,16 @@ def download():
         "socket_timeout": 30,
         "retries": 5,
         "fragment_retries": 5,
-        "http_chunk_size": 10485760,           # 10 MB chunks
+        "http_chunk_size": 10485760,
         "ffmpeg_location": FFMPEG_PATH,
-        # Pretend to be a real browser
-        "http_headers": {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "en-US,en;q=0.9",
-        },
-        # YouTube-specific: use the web client for better compatibility
+        # إضافة الكوكيز لتخطي حظر يوتيوب (Bot Protection)
+        "cookiefile": "cookies.txt" if os.path.exists("cookies.txt") else None,
+        
+        "impersonate": ImpersonateTarget(client="chrome"),
         "extractor_args": {
             "youtube": {
-                "player_client": ["web"],
+                # استخدام عملاء متعددين لتجاوز الحماية
+                "player_client": ["android", "web", "ios"], 
             },
         },
     }
@@ -218,3 +213,4 @@ if __name__ == "__main__":
             serve(app, host="0.0.0.0", port=port, threads=4)
         except ImportError:
             app.run(host="0.0.0.0", port=port, debug=True)
+
